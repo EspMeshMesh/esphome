@@ -7,6 +7,8 @@ CONF_IMPLEMENTATION = "implementation"
 IMPLEMENTATION_LWIP_TCP = "lwip_tcp"
 IMPLEMENTATION_LWIP_SOCKETS = "lwip_sockets"
 IMPLEMENTATION_BSD_SOCKETS = "bsd_sockets"
+IMPLEMENTATION_MESHMESH_8266 = "meshmesh_esp8266"
+IMPLEMENTATION_MESHMESH_ESP32 = "meshmesh_esp32"
 
 CONFIG_SCHEMA = cv.Schema(
     {
@@ -22,6 +24,8 @@ CONFIG_SCHEMA = cv.Schema(
             IMPLEMENTATION_LWIP_TCP,
             IMPLEMENTATION_LWIP_SOCKETS,
             IMPLEMENTATION_BSD_SOCKETS,
+            IMPLEMENTATION_MESHMESH_8266,
+            IMPLEMENTATION_MESHMESH_ESP32,
             lower=True,
             space="_",
         ),
@@ -37,3 +41,7 @@ async def to_code(config):
         cg.add_define("USE_SOCKET_IMPL_LWIP_SOCKETS")
     elif impl == IMPLEMENTATION_BSD_SOCKETS:
         cg.add_define("USE_SOCKET_IMPL_BSD_SOCKETS")
+    elif impl == IMPLEMENTATION_MESHMESH_8266:
+        cg.add_define("USE_SOCKET_IMPL_MESHMESH_8266")
+    elif impl == IMPLEMENTATION_MESHMESH_ESP32:
+        cg.add_define("USE_SOCKET_IMPL_MESHMESH_8266")
