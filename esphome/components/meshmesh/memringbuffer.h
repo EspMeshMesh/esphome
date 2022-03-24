@@ -1,0 +1,47 @@
+#pragma once
+#ifndef __MEMRINGBUFFER__
+#define __MEMRINGBUFFER__
+
+#include <stdint.h>
+
+namespace esphome {
+namespace meshmesh {
+
+class MemRingBuffer {
+public:
+    explicit MemRingBuffer(uint16_t size=0);
+    virtual ~MemRingBuffer();
+    void pushData(uint8_t *data, uint16_t size);
+    void pushByte(uint8_t byte);
+    uint16_t popData(uint8_t *data, uint16_t size);
+    void resize(uint16_t size);
+public:
+    uint16_t allocatedSpace() const { return mAllocatedSize; }
+    uint16_t filledSpace() const { return mSize; }
+    uint16_t freeSpace() const { return mAllocatedSize - mSize; }
+private:
+    void deallocateSpace();
+    void allocateSpace(uint16_t size);
+    void pushDataUnsafe(uint8_t *data, uint16_t size);
+    void popDataUnsafe(uint8_t *data, uint16_t size);
+private:
+    uint16_t continousFreeSpace() const {
+        uint8_t *endofbuff = mBuffer + mAllocatedSize;
+        if(mHead <= mTail) return (uint16_t)(endofbuff - mTail); else return (uint16_t)(mHead - mTail);
+    }
+    uint16_t continousFilledSpace() const {
+        uint8_t *endofbuff = mBuffer + mAllocatedSize;
+        if(mHead <= mTail) return (uint16_t)(mTail - mHead); else return (uint16_t)(endofbuff - mHead);
+    }
+private:
+    uint8_t *mBuffer = nullptr;
+    uint8_t *mHead = nullptr;
+    uint8_t *mTail = nullptr;
+    uint16_t mAllocatedSize = 0;
+    uint16_t mSize = 0;
+};
+
+}
+}
+
+#endif
