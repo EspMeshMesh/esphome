@@ -194,6 +194,7 @@ class MeshmeshRawImpl : public Socket {
     ssize_t written = 0;
     for (int i = 0; i < iovcnt; i++) {
       mConnectedPath->sendDataTo(reinterpret_cast<uint8_t *>(iov[i].iov_base), iov[i].iov_len, mFrom, mHandle);
+      written += iov[i].iov_len;
     }
     return written;
   }
