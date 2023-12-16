@@ -11,26 +11,26 @@ static const char *TAG = "meshmesh.multipath";
 #define MULTIPATH_FLAG_RETRANSMIT_MASK 0x0F
 #define MULTIPATH_MAX_RETRANSMISSIONS 0x04
 
-void ICACHE_FLASH_ATTR MultiPathPacket::allocClearData(uint16_t size) {
+void MultiPathPacket::allocClearData(uint16_t size) {
 	allocClearData(size, 0);
 }
 
-void ICACHE_FLASH_ATTR MultiPathPacket::allocClearData(uint16_t size, uint8_t pathlen) {
+void MultiPathPacket::allocClearData(uint16_t size, uint8_t pathlen) {
 	RadioPacket::allocClearData(size+sizeof(MultiPathHeaderSt)+sizeof(uint32_t)*pathlen);
 	multipathHeader()->pathIndex = 0;
 	multipathHeader()->pathLength = pathlen;
 	multipathHeader()->dataLength = size;
 }
 
-void ICACHE_FLASH_ATTR MultiPathPacket::setPayload(const uint8_t *payoad) {
+void MultiPathPacket::setPayload(const uint8_t *payoad) {
 	os_memcpy(clearData()+sizeof(MultiPathHeaderSt)+sizeof(uint32_t)*multipathHeader()->pathLength, payoad, multipathHeader()->dataLength);
 }
 
-void ICACHE_FLASH_ATTR MultiPath::loop() {
+void MultiPath::loop() {
 	mRecvDups.loop();
 }
 
-uint8_t ICACHE_FLASH_ATTR MultiPath::send(MultiPathPacket *pkt, bool initHeader) {
+uint8_t MultiPath::send(MultiPathPacket *pkt, bool initHeader) {
 	MultiPathHeader *header = pkt->multipathHeader();
 	// Fill protocol header...
 	header->protocol = PROTOCOL_MULTIPATH;
@@ -55,7 +55,7 @@ uint8_t ICACHE_FLASH_ATTR MultiPath::send(MultiPathPacket *pkt, bool initHeader)
     return res;
 }
 
-uint8_t ICACHE_FLASH_ATTR MultiPath::send(const uint8_t *data, uint16_t size, uint8_t *target, uint8_t *path, uint8_t pathSize, bool pathRev) {
+uint8_t MultiPath::send(const uint8_t *data, uint16_t size, uint8_t *target, uint8_t *path, uint8_t pathSize, bool pathRev) {
 	MultiPathPacket *pkt = new MultiPathPacket(nullptr, nullptr);
 	pkt->allocClearData(size, pathSize);
 	pkt->multipathHeader()->trargetAddress = uint32FromBuffer(target);
@@ -64,7 +64,7 @@ uint8_t ICACHE_FLASH_ATTR MultiPath::send(const uint8_t *data, uint16_t size, ui
 	return send(pkt, true);
 }
 
-void ICACHE_FLASH_ATTR MultiPath::receiveRadioPacket(uint8_t *buf, uint16_t size, uint32_t f, int16_t  r) {
+void MultiPath::receiveRadioPacket(uint8_t *buf, uint16_t size, uint32_t f, int16_t  r) {
 	if(size > sizeof(MultiPathHeaderSt)) {
 	    MultiPathHeader *header = (MultiPathHeader *)buf;
 		uint16_t wsize = sizeof(MultiPathHeaderSt)+header->dataLength+header->pathLength*sizeof(uint32_t);
@@ -93,16 +93,16 @@ void ICACHE_FLASH_ATTR MultiPath::receiveRadioPacket(uint8_t *buf, uint16_t size
 	}
 }
 
-void ICACHE_FLASH_ATTR MultiPath::setReceiveCallback(MultiPathReceiveHandler recvCb, void *arg) {
+void MultiPath::setReceiveCallback(MultiPathReceiveHandler recvCb, void *arg) {
 	mRecevieCallback = recvCb;
 	mRecevieCallbackArg = arg;
 }
 
-void ICACHE_FLASH_ATTR MultiPath::radioPacketSentCb(void *arg, uint8_t status, RadioPacket *pkt) {
+void MultiPath::radioPacketSentCb(void *arg, uint8_t status, RadioPacket *pkt) {
     ((MultiPath *)arg)->radioPacketSent(status, pkt);
 }
 
-void ICACHE_FLASH_ATTR MultiPath::radioPacketSent(uint8_t status, RadioPacket *pkt) {
+void MultiPath::radioPacketSent(uint8_t status, RadioPacket *pkt) {
     if(status) {
         // Handle transmission error onyl with packets with clean data
         MultiPathPacket *oldpkt = (MultiPathPacket *)pkt;

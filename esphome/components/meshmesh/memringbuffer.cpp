@@ -5,6 +5,8 @@
 #include <HardwareSerial.h>
 #endif
 
+#include <memory.h>
+
 namespace esphome {
 namespace meshmesh {
 
@@ -48,13 +50,13 @@ uint16_t MemRingBuffer::popData(uint8_t *data, uint16_t size) {
 
     int16_t ss = (mTail-mBuffer)-(mHead-mBuffer);
     if(ss<0) ss = mAllocatedSize+ss;
-    Serial1.printf("**%d %d %d==%d\n", mHead-mBuffer, mTail-mBuffer, ss, mSize);
+    //Serial1.printf("**%d %d %d==%d\n", mHead-mBuffer, mTail-mBuffer, ss, mSize);
 
     uint16_t contfillspace = continousFilledSpace();
     if(contfillspace > size) contfillspace = size;
     popDataUnsafe(data, contfillspace);
 
-    Serial1.printf("*%d %d %d\n",size, contfillspace, size-contfillspace);
+    //Serial1.printf("*%d %d %d\n",size, contfillspace, size-contfillspace);
     size -= contfillspace;
     if(size > 0) {
         mHead = mBuffer;

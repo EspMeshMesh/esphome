@@ -82,7 +82,6 @@ public:
 public:
 	static MeshmeshComponent *singleton;
 	static MeshmeshComponent *getInstance();
-    static uint8_t*macAddress(uint8_t* mac);
 #ifdef USE_CONNECTED_PROTOCOL
     ConnectedPath *getConnectedPath() const { return mConnectedPath; }
 #endif

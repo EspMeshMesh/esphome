@@ -30,27 +30,27 @@ static const char *TAG = "meshmesh.ConnectedPath";
 #define CONN_IS_VALID(X) X<CONNPATH_MAX_CONNECTIONS
 
 
-void ICACHE_FLASH_ATTR ConnectedPathPacket::allocClearData(uint16_t size) {
+void ConnectedPathPacket::allocClearData(uint16_t size) {
 	RadioPacket::allocClearData(size+sizeof(ConnectedPathHeaderSt));
 	getHeader()->dataLength = size;
 }
 
-void ICACHE_FLASH_ATTR ConnectedPathPacket::setPayload(const uint8_t *payoad) {
+void ConnectedPathPacket::setPayload(const uint8_t *payoad) {
 	os_memcpy(clearData()+sizeof(ConnectedPathHeaderSt), payoad, getHeader()->dataLength);
 }
 
-void ICACHE_FLASH_ATTR ConnectedPathPacket::setTarget(uint32_t target, uint16_t handle) {
+void ConnectedPathPacket::setTarget(uint32_t target, uint16_t handle) {
 	mTarget = target;
 	if(clearData() != nullptr) getHeader()->nodeHandle = handle;
 }
 
-void ICACHE_FLASH_ATTR ConnectedPath::setup(void) {
+void ConnectedPath::setup(void) {
 	os_memset((uint8_t *)mConnectsions, 0x0, sizeof(mConnectsions));
 	for(int i=0; i<CONNPATH_MAX_CONNECTIONS; i++) connectionSetInvalid(i);
 	mConnectionsCheckTime = millis();
 }
 
-void ICACHE_FLASH_ATTR ConnectedPath::loop() {
+void ConnectedPath::loop() {
 	mRecvDups.loop();
     uint32_t now=millis();
     if(MeshmeshComponent::elapsedMillis(now, mConnectionsCheckTime) > 120000) {
@@ -65,7 +65,7 @@ void ICACHE_FLASH_ATTR ConnectedPath::loop() {
     }
 }
 
-uint8_t ICACHE_FLASH_ATTR ConnectedPath::send(ConnectedPathPacket *pkt, bool forward, bool initHeader) {
+uint8_t ConnectedPath::send(ConnectedPathPacket *pkt, bool forward, bool initHeader) {
 	ConnectedPathHeader_t *header = pkt->getHeader();
 	// Fill protocol header...
 	header->protocol = PROTOCOL_CONNPATH;
@@ -90,7 +90,7 @@ uint8_t ICACHE_FLASH_ATTR ConnectedPath::send(ConnectedPathPacket *pkt, bool for
 	}
 }
 
-void ICACHE_FLASH_ATTR ConnectedPath::sendDataTo(const uint8_t *data, uint16_t size, uint8_t connid) {
+void ConnectedPath::sendDataTo(const uint8_t *data, uint16_t size, uint8_t connid) {
 	if(connid >= CONNPATH_MAX_CONNECTIONS || mConnectsions[connid].sourceAddr == CONNPATH_INVALID_ADDRESS) {
 		return;
 	}
@@ -104,7 +104,7 @@ void ICACHE_FLASH_ATTR ConnectedPath::sendDataTo(const uint8_t *data, uint16_t s
 	send(pkt, false, true);
 }
 
-void ICACHE_FLASH_ATTR ConnectedPath::sendDataTo(const uint8_t *data, uint16_t size, uint32_t from, uint16_t handle) {
+void ConnectedPath::sendDataTo(const uint8_t *data, uint16_t size, uint32_t from, uint16_t handle) {
 	ConnectedPathConnections *conn = findConnection(from, handle);
 	if(conn != nullptr) {
 		ConnectedPathPacket *pkt = new ConnectedPathPacket(nullptr, nullptr);
@@ -116,18 +116,18 @@ void ICACHE_FLASH_ATTR ConnectedPath::sendDataTo(const uint8_t *data, uint16_t s
 	}
 }
 
-void ICACHE_FLASH_ATTR ConnectedPath::closeConnection_(ConnectedPathConnections *conn) {
+void ConnectedPath::closeConnection_(ConnectedPathConnections *conn) {
 	sendSimplePacket(CONNPATH_DISCONNECT_REQ, conn->sourceAddr, conn->sourceHandle, false);
 	sendSimplePacket(CONNPATH_DISCONNECT_REQ, conn->destAddr, conn->destHandle, true);
 	connectionSetInvalid(conn);
 }
 
-void ICACHE_FLASH_ATTR ConnectedPath::closeConnection(uint32_t from, uint16_t handle) {
+void ConnectedPath::closeConnection(uint32_t from, uint16_t handle) {
 	ConnectedPathConnections *conn = findConnection(from, handle);
 	if(conn != nullptr) closeConnection_(conn);
 }
 
-void ICACHE_FLASH_ATTR ConnectedPath::closeAllConnections() {
+void ConnectedPath::closeAllConnections() {
 	for(int i=0; i<CONNPATH_MAX_CONNECTIONS; i++) {
 		if(mConnectsions[i].sourceAddr != CONNPATH_INVALID_ADDRESS) {
 			closeConnection_(mConnectsions+i);
@@ -135,7 +135,7 @@ void ICACHE_FLASH_ATTR ConnectedPath::closeAllConnections() {
 	}
 }
 
-uint8_t ICACHE_FLASH_ATTR ConnectedPath::receiveUartPacket(uint8_t *data, uint16_t size) {
+uint8_t ConnectedPath::receiveUartPacket(uint8_t *data, uint16_t size) {
 	if(size >= sizeof(ConnectedPathHeaderSt)) {
 		ConnectedPathHeader_t *header = (ConnectedPathHeader_t *)data;
 		//ESP_LOGD(TAG, "ConnectedPath::receiveUartPacket size %d subp %d", size, header->subprotocol);
@@ -158,7 +158,7 @@ uint8_t ICACHE_FLASH_ATTR ConnectedPath::receiveUartPacket(uint8_t *data, uint16
 	return HANDLE_UART_OK;
 }
 
-void ICACHE_FLASH_ATTR ConnectedPath::receiveRadioPacket(uint8_t  *buf, uint16_t  size, uint32_t f, int16_t r) {
+void ConnectedPath::receiveRadioPacket(uint8_t  *buf, uint16_t  size, uint32_t f, int16_t r) {
 	if(size >= sizeof(ConnectedPathHeaderSt)) {
 	    ConnectedPathHeader_t *header = (ConnectedPathHeader_t *)buf;
 		// ESP_LOGD(TAG, "ConnectedPath::receiveRadioPacket cmd %02X from %06X with seq %d data %d", header->subprotocol, f, header->seqno, header->dataLength);
@@ -186,7 +186,7 @@ void ICACHE_FLASH_ATTR ConnectedPath::receiveRadioPacket(uint8_t  *buf, uint16_t
 	}
 }
 
-void ICACHE_FLASH_ATTR ConnectedPath::setReceiveCallback(ConnectedPathReceiveHandler recvCb, ConnectedPathDisconnectHandler discCb, void *arg, uint32_t from, uint16_t handle) {
+void ConnectedPath::setReceiveCallback(ConnectedPathReceiveHandler recvCb, ConnectedPathDisconnectHandler discCb, void *arg, uint32_t from, uint16_t handle) {
 	ConnectedPathConnections *conn = findConnection(from, handle);
 	if(conn != nullptr) {
 		conn->receive = recvCb;
@@ -197,21 +197,21 @@ void ICACHE_FLASH_ATTR ConnectedPath::setReceiveCallback(ConnectedPathReceiveHan
 	}
 }
 
-void ICACHE_FLASH_ATTR ConnectedPath::bindPort(ConnectedPathNewConnectionHandler h, void *arg, uint16_t port) {
+void ConnectedPath::bindPort(ConnectedPathNewConnectionHandler h, void *arg, uint16_t port) {
     ESP_LOGD(TAG, "ConnectedPath::bindPort port %d", port);
     ConnectedPathBindedPort_t newclient = { h, arg, port };
     mBindedPorts.push_back(newclient);
 }
 
-bool ICACHE_FLASH_ATTR ConnectedPath::isConnectionActive(uint32_t from, uint16_t handle) const {
+bool ConnectedPath::isConnectionActive(uint32_t from, uint16_t handle) const {
 	return findConnection(from, handle) != nullptr;
 }
 
-void ICACHE_FLASH_ATTR ConnectedPath::radioPacketSentCb(void *arg, uint8_t  status, RadioPacket *pkt) {
+void ConnectedPath::radioPacketSentCb(void *arg, uint8_t  status, RadioPacket *pkt) {
     ((ConnectedPath *)arg)->radioPacketSent(status, pkt);
 }
 
-void ICACHE_FLASH_ATTR ConnectedPath::radioPacketSent(uint8_t  status, RadioPacket *pkt) {
+void ConnectedPath::radioPacketSent(uint8_t  status, RadioPacket *pkt) {
     if(status) {
         // Handle transmission error onyl with packets with clean data
         ConnectedPathPacket *oldpkt = (ConnectedPathPacket *)pkt;
@@ -232,7 +232,7 @@ void ICACHE_FLASH_ATTR ConnectedPath::radioPacketSent(uint8_t  status, RadioPack
     }
 }
 
-void ICACHE_FLASH_ATTR ConnectedPath::radioPacketError(uint32_t address, uint16_t handle, uint8_t subprot) {
+void ConnectedPath::radioPacketError(uint32_t address, uint16_t handle, uint8_t subprot) {
 	uint8_t connid; bool forward; uint32_t otherAddress; uint16_t otherHandle;
 	connid = findConnection(address, handle, forward, otherAddress, otherHandle);
 	if(CONN_IS_VALID(connid)) {
@@ -247,7 +247,7 @@ void ICACHE_FLASH_ATTR ConnectedPath::radioPacketError(uint32_t address, uint16_
 	}
 }
 
-void ICACHE_FLASH_ATTR ConnectedPath::openConnection(uint8_t *buffer, uint16_t size, uint32_t from) {
+void ConnectedPath::openConnection(uint8_t *buffer, uint16_t size, uint32_t from) {
 	if(size >= sizeof(ConnectedPathHeaderSt)+3) {
 		ConnectedPathHeader_t *header = (ConnectedPathHeader_t *)buffer;
 		uint8_t *buf = buffer + sizeof(ConnectedPathHeaderSt);
@@ -291,7 +291,7 @@ void ICACHE_FLASH_ATTR ConnectedPath::openConnection(uint8_t *buffer, uint16_t s
 	}
 }
 
-void ICACHE_FLASH_ATTR ConnectedPath::openConnectionForMe(ConnectedPathConnections *conn, uint16_t port) {
+void ConnectedPath::openConnectionForMe(ConnectedPathConnections *conn, uint16_t port) {
 	conn->destAddr = 0;
 	conn->destHandle = 0;
 
@@ -307,7 +307,7 @@ void ICACHE_FLASH_ATTR ConnectedPath::openConnectionForMe(ConnectedPathConnectio
 	}
 }
 
-void ICACHE_FLASH_ATTR ConnectedPath::openConnectionNack(uint32_t from, uint16_t handle) {
+void ConnectedPath::openConnectionNack(uint32_t from, uint16_t handle) {
 	bool forward; uint32_t otherAddress; uint16_t otherHandle;
 	int8_t connid = findConnection(from, handle, forward, otherAddress, otherHandle);
 	ESP_LOGD(TAG, "ConnectedPath::openConnectionNack from %06X:%04X connid %d forward %d addr:%06X", from, handle, connid, forward, otherAddress);
@@ -319,7 +319,7 @@ void ICACHE_FLASH_ATTR ConnectedPath::openConnectionNack(uint32_t from, uint16_t
 	}
 }
 
-void ICACHE_FLASH_ATTR ConnectedPath::openConnectionAck(uint32_t from, uint16_t handle, uint8_t *buffer, uint16_t size) {
+void ConnectedPath::openConnectionAck(uint32_t from, uint16_t handle, uint8_t *buffer, uint16_t size) {
 	bool forward; uint32_t otherAddress; uint16_t otherHandle;
 	int8_t connid = findConnection(from, handle, forward, otherAddress, otherHandle);
 	ESP_LOGD(TAG, "ConnectedPath::openConnectionAck from %06X:%04X[%02X] size %d", from, handle, connid, size);
@@ -332,7 +332,7 @@ void ICACHE_FLASH_ATTR ConnectedPath::openConnectionAck(uint32_t from, uint16_t 
 	}
 }
 
-void ICACHE_FLASH_ATTR ConnectedPath::disconnect(uint8_t *buffer, uint16_t size, uint32_t from) {
+void ConnectedPath::disconnect(uint8_t *buffer, uint16_t size, uint32_t from) {
 	if(size > sizeof(ConnectedPathHeaderSt)) {
 		ConnectedPathHeader_t *header = (ConnectedPathHeader_t *)buffer;
 		ESP_LOGD(TAG, "ConnectedPath::disconnect flags %d size %d", header->flags, size);
@@ -347,7 +347,7 @@ void ICACHE_FLASH_ATTR ConnectedPath::disconnect(uint8_t *buffer, uint16_t size,
 	}
 }
 
-void ICACHE_FLASH_ATTR ConnectedPath::sendData(uint8_t *buffer, uint16_t size, uint32_t from) {
+void ConnectedPath::sendData(uint8_t *buffer, uint16_t size, uint32_t from) {
 	if(size > sizeof(ConnectedPathHeaderSt)) {
 		ConnectedPathHeader_t *header = (ConnectedPathHeader_t *)buffer;
 		//ESP_LOGD(TAG, "ConnectedPath::sendData flags %d size %d", header->flags, size);
@@ -376,7 +376,7 @@ void ICACHE_FLASH_ATTR ConnectedPath::sendData(uint8_t *buffer, uint16_t size, u
 	}
 }
 
-void ICACHE_FLASH_ATTR ConnectedPath::invalidHandle(uint32_t from, uint16_t handle) {
+void ConnectedPath::invalidHandle(uint32_t from, uint16_t handle) {
 	bool forward; uint32_t otherAddress; uint16_t otherHandle;
 	int8_t connid = findConnection(from, handle, forward, otherAddress, otherHandle);
 	ESP_LOGD(TAG, "ConnectedPath::invalidHandle from %06X:%04X connid %d. %06X:%04X %s", from, handle, connid, otherAddress, otherHandle, forward ? "-->" : "<--");
@@ -386,7 +386,7 @@ void ICACHE_FLASH_ATTR ConnectedPath::invalidHandle(uint32_t from, uint16_t hand
 	}
 }
 
-void ICACHE_FLASH_ATTR ConnectedPath::sendDataError(uint32_t from, uint16_t handle) {
+void ConnectedPath::sendDataError(uint32_t from, uint16_t handle) {
 	bool forward; uint32_t otherAddress; uint16_t otherHandle;
 	int8_t connid = findConnection(from, handle, forward, otherAddress, otherHandle);
 	ESP_LOGD(TAG, "ConnectedPath::sendDataError from %06X:%04X connid %d. %d %06X", from, handle, connid, forward, otherAddress);
@@ -396,7 +396,7 @@ void ICACHE_FLASH_ATTR ConnectedPath::sendDataError(uint32_t from, uint16_t hand
 	}
 }
 
-const ConnectedPathConnections *ICACHE_FLASH_ATTR ConnectedPath::findConnection(uint32_t from, uint16_t handle) const {
+const ConnectedPathConnections *ConnectedPath::findConnection(uint32_t from, uint16_t handle) const {
 	for(int i=0; i<CONNPATH_MAX_CONNECTIONS; i++) {
 		if((from == mConnectsions[i].sourceAddr && handle == mConnectsions[i].sourceHandle) || (from == mConnectsions[i].destAddr && handle == mConnectsions[i].destHandle)) {
 			return mConnectsions+i;
@@ -405,7 +405,7 @@ const ConnectedPathConnections *ICACHE_FLASH_ATTR ConnectedPath::findConnection(
 	return nullptr;
 }
 
-ConnectedPathConnections *ICACHE_FLASH_ATTR ConnectedPath::findConnection(uint32_t from, uint16_t handle) {
+ConnectedPathConnections *ConnectedPath::findConnection(uint32_t from, uint16_t handle) {
 	for(int i=0; i<CONNPATH_MAX_CONNECTIONS; i++) {
 		if((from == mConnectsions[i].sourceAddr && handle == mConnectsions[i].sourceHandle) || (from == mConnectsions[i].destAddr && handle == mConnectsions[i].destHandle)) {
 			return mConnectsions+i;
@@ -414,7 +414,7 @@ ConnectedPathConnections *ICACHE_FLASH_ATTR ConnectedPath::findConnection(uint32
 	return nullptr;
 }
 
-uint8_t ICACHE_FLASH_ATTR ConnectedPath::findConnection(uint32_t from, uint16_t handle, bool &forward, uint32_t &otherAddress, uint16_t &otherHandle) {
+uint8_t ConnectedPath::findConnection(uint32_t from, uint16_t handle, bool &forward, uint32_t &otherAddress, uint16_t &otherHandle) {
 	for(int i=0; i<CONNPATH_MAX_CONNECTIONS; i++) {
 		if(from == mConnectsions[i].sourceAddr && handle == mConnectsions[i].sourceHandle) {
 			forward = true;
@@ -432,7 +432,7 @@ uint8_t ICACHE_FLASH_ATTR ConnectedPath::findConnection(uint32_t from, uint16_t 
 	return CONNPATH_MAX_CONNECTIONS;
 }
 
-void ICACHE_FLASH_ATTR ConnectedPath::sendUartPacket(uint8_t command, uint16_t handle, uint8_t *data, uint16_t size) {
+void ConnectedPath::sendUartPacket(uint8_t command, uint16_t handle, uint8_t *data, uint16_t size) {
     if(size == 0) {
         uint8_t _data[4];
         _data[0] = CMD_CONNPATH_REPLY;
@@ -450,7 +450,7 @@ void ICACHE_FLASH_ATTR ConnectedPath::sendUartPacket(uint8_t command, uint16_t h
     }
 }
 
-ConnectedPathPacket *ICACHE_FLASH_ATTR ConnectedPath::cratePacket(uint8_t subprot, uint16_t size, uint32_t to, uint16_t handle) {
+ConnectedPathPacket *ConnectedPath::cratePacket(uint8_t subprot, uint16_t size, uint32_t to, uint16_t handle) {
 	ConnectedPathPacket *pkt = new ConnectedPathPacket(nullptr, nullptr);
 	pkt->allocClearData(size);
 	pkt->getHeader()->subprotocol = subprot;
@@ -458,7 +458,7 @@ ConnectedPathPacket *ICACHE_FLASH_ATTR ConnectedPath::cratePacket(uint8_t subpro
 	return pkt;
 }
 
-void ICACHE_FLASH_ATTR ConnectedPath::sendSimplePacket(uint8_t subprot, uint32_t to, uint16_t handle, bool forward) {
+void ConnectedPath::sendSimplePacket(uint8_t subprot, uint32_t to, uint16_t handle, bool forward) {
 	if(to == 0) {
 		if(forward == false) sendUartPacket(subprot, handle, nullptr, 0);
 	} else {
@@ -467,7 +467,7 @@ void ICACHE_FLASH_ATTR ConnectedPath::sendSimplePacket(uint8_t subprot, uint32_t
 }
 
 
-void ICACHE_FLASH_ATTR ConnectedPath::debugConnection() const {
+void ConnectedPath::debugConnection() const {
 	uint32_t now = millis();
 	for(int i=0; i<CONNPATH_MAX_CONNECTIONS;i++) {
 		if(mConnectsions[i].sourceAddr != CONNPATH_INVALID_ADDRESS) {

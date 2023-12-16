@@ -15,11 +15,11 @@ void UnicastPacket::allocClearData(uint16_t size) {
 	unicastHeader()->lenght = size;
 }
 
-void ICACHE_FLASH_ATTR Unicast::loop() {
+void Unicast::loop() {
 	mRecvDups.loop();
 }
 
-uint8_t ICACHE_FLASH_ATTR Unicast::send(UnicastPacket *pkt, uint32_t target, bool initHeader) {
+uint8_t Unicast::send(UnicastPacket *pkt, uint32_t target, bool initHeader) {
 	UnicastHeader *header = pkt->unicastHeader();
 	// Fill protocol header...
 	header->protocol = PROTOCOL_UNICAST;
@@ -39,7 +39,7 @@ uint8_t ICACHE_FLASH_ATTR Unicast::send(UnicastPacket *pkt, uint32_t target, boo
     return res;
 }
 
-uint8_t ICACHE_FLASH_ATTR Unicast::send(const uint8_t *data, uint16_t size, uint32_t target, uint16_t port) {
+uint8_t Unicast::send(const uint8_t *data, uint16_t size, uint32_t target, uint16_t port) {
 	UnicastPacket *pkt = new UnicastPacket(nullptr, nullptr);
 	pkt->allocClearData(size);
 	pkt->unicastHeader()->port = port;
@@ -47,7 +47,7 @@ uint8_t ICACHE_FLASH_ATTR Unicast::send(const uint8_t *data, uint16_t size, uint
 	return send(pkt, target, true);
 }
 
-void ICACHE_FLASH_ATTR Unicast::receiveRadioPacket(uint8_t *p, uint16_t size, uint32_t f, int16_t  r) {
+void Unicast::receiveRadioPacket(uint8_t *p, uint16_t size, uint32_t f, int16_t  r) {
     UnicastHeader *header = (UnicastHeader *)p;
     //ESP_LOGD(TAG, "unicast_recv size=%d seq %d=%d", size, unichead->seqno, unicast_conn.last_seqno);
     if(size < sizeof(UnicastHeaderSt) + header->lenght) {
@@ -67,17 +67,17 @@ void ICACHE_FLASH_ATTR Unicast::receiveRadioPacket(uint8_t *p, uint16_t size, ui
 	}
 }
 
-void ICACHE_FLASH_ATTR Unicast::bindPort(UnicastReceiveRadioPacketHandler h, void *arg, uint16_t port) {
+void Unicast::bindPort(UnicastReceiveRadioPacketHandler h, void *arg, uint16_t port) {
     ESP_LOGD(TAG, "Unicast::bindPort port %d", port);
     UnicastBindedPort_t newhandler = { h, arg, port };
     mBindedPorts.push_back(newhandler);
 }
 
-void ICACHE_FLASH_ATTR Unicast::radioPacketSentCb(void *arg, uint8_t status, RadioPacket *pkt) {
+void Unicast::radioPacketSentCb(void *arg, uint8_t status, RadioPacket *pkt) {
     ((Unicast *)arg)->radioPacketSent(status, pkt);
 }
 
-void ICACHE_FLASH_ATTR Unicast::radioPacketSent(uint8_t status, RadioPacket *pkt) {
+void Unicast::radioPacketSent(uint8_t status, RadioPacket *pkt) {
     if(status) {
         // Handle transmission error onyl with packets with clean data
         UnicastPacket *oldpkt = (UnicastPacket *)pkt;

@@ -96,7 +96,7 @@ RadioPacket::~RadioPacket() {
     if(mClearData) delete mClearData;
 }
 
-void ICACHE_FLASH_ATTR RadioPacket::fromRawData(uint8_t *buf, uint16_t size) {
+void RadioPacket::fromRawData(uint8_t *buf, uint16_t size) {
     mClearDataSize = size;
     mClearData = new uint8_t[mClearDataSize];
 	os_memcpy(clearData(), buf, size);

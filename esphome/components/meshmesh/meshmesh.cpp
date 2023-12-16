@@ -55,11 +55,6 @@ MeshmeshComponent *MeshmeshComponent::getInstance() {
 	return singleton;
 }
 
-uint8_t *MeshmeshComponent::macAddress(uint8_t *mac) {
-    wifi_get_macaddr(STATION_IF, mac);
-    return mac;
-}
-
 MeshmeshComponent::MeshmeshComponent(int baud_rate, int tx_buffer, int rx_buffer): mBaudRate(baud_rate), mTxBuffer(tx_buffer), mRxBuffer(rx_buffer) {
 	if(singleton == nullptr) singleton = this;
 }
@@ -446,7 +441,7 @@ MeshmeshComponent::EnityType MeshmeshComponent::findEntityTypeByHash(uint16_t ha
 #define DEF_CMD_BUFFER_SIZE 0x440
 #define MAX_CMD_BUFFER_SIZE 0x440
 
-void ICACHE_FLASH_ATTR MeshmeshComponent::user_uart_recv_data(uint8_t byte) {
+void MeshmeshComponent::user_uart_recv_data(uint8_t byte) {
 	switch(mRecvState) {
 	case WAIT_MAGICK:
 		if(byte == CMD_MAGICK) {
@@ -1203,7 +1198,7 @@ void MeshmeshComponent::sendLog(int level, const char *tag, const char *payload)
 }
 
 #ifdef USE_TEST_PROCEDURE
-void ICACHE_FLASH_ATTR MeshmeshComponent::test_light_broadcast(uint16_t value) {
+void MeshmeshComponent::test_light_broadcast(uint16_t value) {
 			uint8_t buffer[6];
 			buffer[0] = CMD_SET_ENTITY_STATE_REQ;
 			buffer[1] = (uint8_t)LightEntity;
@@ -1212,7 +1207,7 @@ void ICACHE_FLASH_ATTR MeshmeshComponent::test_light_broadcast(uint16_t value) {
 			broadCastSendData(buffer, 6);
 }
 
-void ICACHE_FLASH_ATTR MeshmeshComponent::loop_test_procedure(void) {
+void MeshmeshComponent::loop_test_procedure(void) {
 	uint32_t now = millis();
 	switch(mTestProcedureState) {
 	case 0:
@@ -1256,7 +1251,7 @@ void ICACHE_FLASH_ATTR MeshmeshComponent::loop_test_procedure(void) {
 }
 #endif
 
-void ICACHE_FLASH_ATTR MeshmeshComponent::wifiInitMacAddr(uint8_t index) {
+void MeshmeshComponent::wifiInitMacAddr(uint8_t index) {
 	uint32_t id = Discovery::chipId();
 	uint8_t *idptr = (uint8_t *)&id;
 	uint8_t mac[6] = {0};

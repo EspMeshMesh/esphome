@@ -7,7 +7,7 @@ void BroadCastPacket::allocClearData(uint16_t size) {
 	RadioPacket::allocClearData(size+sizeof(broadcast_header_st));
 }
 
-uint8_t ICACHE_FLASH_ATTR Broadcast::send(const uint8_t *data, uint16_t size) {
+uint8_t Broadcast::send(const uint8_t *data, uint16_t size) {
 	BroadCastPacket *pkt = new BroadCastPacket(nullptr, nullptr);
 	pkt->allocClearData(size);
 	pkt->broadcastHeader()->protocol = PROTOCOL_BROADCAST;
@@ -21,16 +21,16 @@ uint8_t ICACHE_FLASH_ATTR Broadcast::send(const uint8_t *data, uint16_t size) {
     return res;
 }
 
-void ICACHE_FLASH_ATTR Broadcast::recv(uint8_t *p, uint16_t size, uint8_t *f) {
+void Broadcast::recv(uint8_t *p, uint16_t size, uint8_t *f) {
 	broadcast_header_t *brdchead = (broadcast_header_t *)p;
 	if (rx_func) rx_func(p+sizeof(broadcast_header_t), brdchead->lenght, f);
 }
 
-void ICACHE_FLASH_ATTR Broadcast::setRecv_cb(breadcast_recv_cb_fn rx_fn) {
+void Broadcast::setRecv_cb(breadcast_recv_cb_fn rx_fn) {
 	rx_func = rx_fn;
 }
 
-void ICACHE_FLASH_ATTR Broadcast::open() {
+void Broadcast::open() {
 	seqno = 0;
 }
 

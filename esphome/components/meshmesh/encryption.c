@@ -20,12 +20,12 @@
 static void *encrypt_ctx = 0;
 static void *decrypt_ctx = 0;
 
-void ICACHE_FLASH_ATTR encryption_init(const char *key, uint8_t keyLen) {
+void encryption_init(const char *key, uint8_t keyLen) {
 	if(!encrypt_ctx) encrypt_ctx = aes_encrypt_init((uint8_t *)key, keyLen);
 	if(!decrypt_ctx) decrypt_ctx = aes_decrypt_init((uint8_t *)key, keyLen);
 }
 
-void ICACHE_FLASH_ATTR encrypt_data(uint8_t *dst, uint8_t *src, uint16_t len) {
+void encrypt_data(uint8_t *dst, uint8_t *src, uint16_t len) {
 	if(encrypt_ctx == 0) {
 		return;
 	}
@@ -56,7 +56,7 @@ void ICACHE_FLASH_ATTR encrypt_data(uint8_t *dst, uint8_t *src, uint16_t len) {
 	}
 }
 
-void ICACHE_FLASH_ATTR decrypt_data(uint8_t *dst, uint8_t *src, uint16_t len) {
+void decrypt_data(uint8_t *dst, uint8_t *src, uint16_t len) {
 	if(decrypt_ctx == 0) {
 		return;
 	}
