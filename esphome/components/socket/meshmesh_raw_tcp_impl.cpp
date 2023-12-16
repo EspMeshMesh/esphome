@@ -198,7 +198,12 @@ class MeshmeshRawImpl : public Socket {
     }
     return written;
   }
-
+  
+  ssize_t sendto(const void *buf, size_t len, int flags, const struct sockaddr *to, socklen_t tolen) override {
+    // return ::sendto(fd_, buf, len, flags, to, tolen);
+    return 0;
+  }
+  
   int setblocking(bool blocking) override {
     if (blocking) {
       // blocking operation not supported
