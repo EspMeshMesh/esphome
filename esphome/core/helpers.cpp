@@ -565,7 +565,7 @@ void get_mac_address_raw(uint8_t *mac) {  // NOLINT(readability-non-const-parame
 #endif
 #elif defined(USE_ESP8266)
 #if defined(USE_MESH_MESH)
-  meshmesh::MeshmeshComponent::macAddress(mac);
+  wifi_get_macaddr(STATION_IF, mac);
 #else
   wifi_get_macaddr(STATION_IF, mac);
 #endif

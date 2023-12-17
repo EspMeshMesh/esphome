@@ -16,7 +16,7 @@ typedef void (*breadcast_recv_cb_fn)(uint8_t *data, uint16_t size, uint8_t *from
 
 class BroadCastPacket: public RadioPacket {
 public:
-	explicit BroadCastPacket(pktbufSentCbFn cb, void *arg): RadioPacket(cb, arg) {}
+	explicit BroadCastPacket(pktbufSentCbFn cb, void *arg): RadioPacket(cb, arg) { setIsBroadcast(); }
 	virtual void allocClearData(uint16_t size);
 public:
 	broadcast_header_t *broadcastHeader() { return (broadcast_header_t *)clearData(); }

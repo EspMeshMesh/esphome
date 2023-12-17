@@ -74,9 +74,9 @@ class MeshmeshRawImpl : public Socket {
     auto *addr4 = reinterpret_cast<const sockaddr_in *>(name);
     in_port_t port = ntohs(addr4->sin_port);
 
-    ip_addr_t ip;
-    ip.addr = addr4->sin_addr.s_addr;
-    ESP_LOGD(TAG, "MeshmeshRawImpl::bind(ip=%u port=%u)", ip.addr, port);
+    //ip_addr_t ip;
+    //ip.u_addr.ip4 = addr4->sin_addr.s_addr;
+    //ESP_LOGD(TAG, "MeshmeshRawImpl::bind(ip=%u port=%u)", ip.addr, port);
     mConnectedPath->bindPort([](void *s, uint32_t from, uint16_t handle) {
       ((MeshmeshRawImpl *)s)->onNewClient(from, handle);
     }, this, port);

@@ -138,20 +138,44 @@ void RadioPacket::sendFreedom() {
     wifi_send_pkt_freedom(ptr80211(), len80211(), true);
 #endif
 #if ARDUINO_ARCH_ESP32
-    esp_err_t res = esp_wifi_80211_tx(WIFI_IF_STA, ptr80211(), len80211(), true);
+    //ESP_LOGD(TAG, "sendFreedom esp_wifi_80211_tx about to send %d", len80211());
+
+    esp_err_t res;
+
+	/*res = esp_wifi_set_channel(3, WIFI_SECOND_CHAN_NONE);
+	if(res != ESP_OK) {
+		ESP_LOGD(TAG, "esp_wifi_set_channel error %d", res);
+	}*/
+
+    res = esp_wifi_80211_tx(WIFI_IF_AP, ptr80211(), len80211(), true);
     if(res != ESP_OK) {
         ESP_LOGE(TAG, "sendFreedom esp_wifi_80211_tx err %d", res);
-    }
+#if 1
+    auto ieee80211_hdr = (ieee80211_hdr_p)ptr80211();
+    ESP_LOGD(TAG, "sendFreedom type %d,%d", ieee80211_hdr->frame_control.Type, ieee80211_hdr->frame_control.Subtype);
+    ESP_LOGD(TAG, "mac1 %02X:%02X:%02X:%02X:%02X:%02X", ieee80211_hdr->addr1[0], ieee80211_hdr->addr1[1], ieee80211_hdr->addr1[2], \
+        ieee80211_hdr->addr1[3], ieee80211_hdr->addr1[4], ieee80211_hdr->addr1[5]);
+    ESP_LOGD(TAG, "mac2 %02X:%02X:%02X:%02X:%02X:%02X", ieee80211_hdr->addr2[0], ieee80211_hdr->addr2[1], ieee80211_hdr->addr2[2], \
+        ieee80211_hdr->addr2[3], ieee80211_hdr->addr2[4], ieee80211_hdr->addr2[5]);
+    ESP_LOGD(TAG, "mac3 %02X:%02X:%02X:%02X:%02X:%02X", ieee80211_hdr->addr3[0], ieee80211_hdr->addr3[1], ieee80211_hdr->addr3[2], \
+        ieee80211_hdr->addr3[3], ieee80211_hdr->addr3[4], ieee80211_hdr->addr3[5]);
+#endif
+}
+
 #endif
 }
 
 void RadioPacket::fill80211(uint8_t *targetId, uint8_t *pktbufNodeIdPtr) {
+    uint16_t seq_ctrl = 1;
     os_memset(ptr80211(), 0, sizeof(ieee80211_hdr_st));
 
 	ieee80211_hdr_p ieee80211_hdr = (ieee80211_hdr_p)ptr80211();
 	ieee80211_hdr->frame_control.Protocol = 0;
 	ieee80211_hdr->frame_control.Type = FRAME_TYPE_DATA;
 	ieee80211_hdr->frame_control.Subtype = FRAME_SUBTYPE_DATA;
+    ieee80211_hdr->frame_control.FromDS = targetId ? 0 : 1;
+    ieee80211_hdr->frame_control.ToDS = 0;
+    ieee80211_hdr->seq_ctrl = ++seq_ctrl;
 	// Broadcast destinations
 	os_memset(ieee80211_hdr->addr1, 0xFF, 18);
 	// Target for unicast packet
@@ -202,10 +226,17 @@ PacketBuf *PacketBuf::getInstance() {
 
 uint8_t PacketBuf::send(RadioPacket *pkt) {
 #ifdef ARDUINO_ARCH_ESP32
-     pktbufSent = pkt;
-     pktbufSent->sendFreedom();
-     delete pktbufSent;
-     pktbufSent = nullptr;
+    if(!pktbufSent) {
+        pktbufSent = pkt;
+        pktbufSent->sendFreedom();
+        // Bradcast packets don't call the callback
+        if(pktbufSent->isBroadcast()) {
+            freedomCallback(1);
+        }
+    } else {
+        // FIXME: Limit maximum queue size
+        mPacketQueue.push_back(pkt);
+    }
 #else
     if(!pktbufSent) {
         pktbufSent = pkt;
@@ -315,7 +346,7 @@ void PacketBuf::recvTask(os_event_t *events) {
 
 #if ARDUINO_ARCH_ESP32
 void PacketBuf::wifiTxDoneCb(uint8_t ifidx, uint8_t *data, uint16_t *data_len, bool txStatus) {
-    ESP_LOGD(TAG, "wifiTxDoneCb %d", txStatus);
+    //ESP_LOGD(TAG, "wifiTxDoneCb if:%d sent:%d len:%d", ifidx, txStatus, *data_len);
     if(singleton) singleton->freedomCallback(txStatus?0:1);
 }
 #else
@@ -330,7 +361,10 @@ void PacketBuf::setup(const char *aeskey, int aeskeylen) {
     int i;
     pktbufRecvTaskIndex = 0;
 #ifdef ARDUINO_ARCH_ESP32
-    esp_wifi_set_promiscuous_rx_cb(promiscuousRxq);
+    esp_err_t ret;
+    if(ret = esp_wifi_set_promiscuous_rx_cb(promiscuousRxq) != ESP_OK) {
+        ESP_LOGE(TAG, "esp_wifi_set_promiscuous_rx_cb error %d", ret);
+    }
     mRecvQueue = xQueueCreate(16,sizeof(uint32_t));
 #else
     system_os_task(recvTask_cb, PACKETBUF_TASK_PRIO, pktbufRecvTaskQueue, PACKETBUF_TASK_QUEUE_LEN);
@@ -362,13 +396,17 @@ void PacketBuf::loop() {
 void IRAM_ATTR HOT PacketBuf::rawRecv(RxPacket *pkt) {
 	ieee80211_hdr_p ieee80211_hdr = (ieee80211_hdr_p)pkt->payload;
 
-    /*ESP_LOGD(TAG, "rawRecv type %d,%d len %d", ieee80211_hdr->frame_control.Type, ieee80211_hdr->frame_control.Subtype, pkt->rx_ctrl.sig_len);
-    ESP_LOGD(TAG, "mac1 %02X:%02X:%02X:%02X:%02X:%02X", ieee80211_hdr->addr1[0], ieee80211_hdr->addr1[1], ieee80211_hdr->addr1[2], \
-        ieee80211_hdr->addr1[3], ieee80211_hdr->addr1[4], ieee80211_hdr->addr1[5]);
-    ESP_LOGD(TAG, "mac2 %02X:%02X:%02X:%02X:%02X:%02X", ieee80211_hdr->addr2[0], ieee80211_hdr->addr2[1], ieee80211_hdr->addr2[2], \
-        ieee80211_hdr->addr2[3], ieee80211_hdr->addr2[4], ieee80211_hdr->addr2[5]);
-    ESP_LOGD(TAG, "mac3 %02X:%02X:%02X:%02X:%02X:%02X", ieee80211_hdr->addr3[0], ieee80211_hdr->addr3[1], ieee80211_hdr->addr3[2], \
-        ieee80211_hdr->addr3[3], ieee80211_hdr->addr3[4], ieee80211_hdr->addr3[5]);*/
+#if 0
+    if(ieee80211_hdr->frame_control.Subtype == FRAME_SUBTYPE_DATA) {
+        ESP_LOGD(TAG, "rawRecv type %d,%d len %d", ieee80211_hdr->frame_control.Type, ieee80211_hdr->frame_control.Subtype, pkt->rx_ctrl.sig_len);
+        ESP_LOGD(TAG, "mac1 %02X:%02X:%02X:%02X:%02X:%02X", ieee80211_hdr->addr1[0], ieee80211_hdr->addr1[1], ieee80211_hdr->addr1[2], \
+            ieee80211_hdr->addr1[3], ieee80211_hdr->addr1[4], ieee80211_hdr->addr1[5]);
+        ESP_LOGD(TAG, "mac2 %02X:%02X:%02X:%02X:%02X:%02X", ieee80211_hdr->addr2[0], ieee80211_hdr->addr2[1], ieee80211_hdr->addr2[2], \
+            ieee80211_hdr->addr2[3], ieee80211_hdr->addr2[4], ieee80211_hdr->addr2[5]);
+        ESP_LOGD(TAG, "mac3 %02X:%02X:%02X:%02X:%02X:%02X", ieee80211_hdr->addr3[0], ieee80211_hdr->addr3[1], ieee80211_hdr->addr3[2], \
+            ieee80211_hdr->addr3[3], ieee80211_hdr->addr3[4], ieee80211_hdr->addr3[5]);
+    }
+#endif
 
 #ifdef ARDUINO_ARCH_ESP32
     static uint8_t brdaddr[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
@@ -418,7 +456,7 @@ void IRAM_ATTR HOT PacketBuf::rawRecv(RxPacket *pkt) {
 
     } else {
         //ESP_LOGD(TAG, "Unknow pkt type:%d sub:type:%d", ieee80211_hdr->frame_control.Type, ieee80211_hdr->frame_control.Subtype);
-        //DEBUG_ARRAY("Unknow pkt: ", pkt->data, pkt->rx_ctl.legacy_length);
+        //DEBUG_ARRAY("Unknow pkt: ", pkt->payload, pkt->rx_ctrl.sig_len);
     }
 }
 

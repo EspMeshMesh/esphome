@@ -44,4 +44,4 @@ async def to_code(config):
     elif impl == IMPLEMENTATION_MESHMESH_8266:
         cg.add_define("USE_SOCKET_IMPL_MESHMESH_8266")
     elif impl == IMPLEMENTATION_MESHMESH_ESP32:
-        cg.add_define("USE_SOCKET_IMPL_MESHMESH_ESP32")
+        cg.add_define("USE_SOCKET_IMPL_MESHMESH_8266")

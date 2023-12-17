@@ -150,6 +150,7 @@ public:
 	explicit RadioPacket(pktbufSentCbFn cb, void *arg): mCallback(cb), mCallbackArg(arg) { };
 	virtual ~RadioPacket();
 	bool isAutoDelete() const { return mAutoDelete; }
+	bool isBroadcast() const { return mIsBroadcast; }
 	void setAutoDelete(bool autodel) { mAutoDelete = autodel; }
 	void setCallback(pktbufSentCbFn cb, void *arg) { mCallback=cb; mCallbackArg=arg; }
 	void fromRawData(uint8_t *buf, uint16_t size);
@@ -172,6 +173,8 @@ public:
 	void fill80211(uint8_t *targetId, uint8_t *pktbufNodeIdPtr);
 	uint32_t target8211() const;
 	uint8_t *ptrData() const { return (uint8_t *)(mEncryptedData + PACKETBUF_80211_SIZE); }
+protected:
+	void setIsBroadcast() { mIsBroadcast = true; }
 private:
 	pktbufSentCbFn mCallback = nullptr;
 	void *mCallbackArg = nullptr;
@@ -185,6 +188,8 @@ private:
 	uint16_t mClearDataSize = 0;
 	// Autodelete packet after been sent
 	bool mAutoDelete = true;
+	// Is a broadcast packet
+	bool mIsBroadcast = false;
 };
 
 class PacketBuf {

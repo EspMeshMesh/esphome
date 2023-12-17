@@ -100,69 +100,127 @@ void MeshmeshComponent::setup() {
     ESP_LOGCONFIG(TAG, "Setting up meshmesh wifi...");
 #ifdef ARDUINO_ARCH_ESP32
 	esp_err_t res;
-	wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
-	wifi_config_t wcfg = {.sta = {}};
+	wifi_config_t wcfg = {
+		.ap = {
+			"esphome", 
+			"esphome", 
+		}
+	};
 
+	esp_netif_t *netif;
+	wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+	const wifi_promiscuous_filter_t filt={
+		.filter_mask=WIFI_PROMIS_FILTER_MASK_MGMT|WIFI_PROMIS_FILTER_MASK_DATA
+	};
+
+
+	wcfg.ap.ssid_len = 0;
+	wcfg.ap.channel = mConfigChannel > 13 ? mPreferences.channel : mConfigChannel;
+	wcfg.ap.authmode = WIFI_AUTH_OPEN;
+	wcfg.ap.ssid_hidden = 1;
+	wcfg.ap.max_connection = 4;
+	wcfg.ap.beacon_interval = 60000;
+
+	res = esp_netif_init();
+	if(res != ESP_OK) {
+		ESP_LOGD(TAG, "esp_netif_init error %d", res);
+		goto wifi_error;
+	}
+	
 	res = esp_event_loop_create_default();
 	if(res != ESP_OK) {
 		ESP_LOGD(TAG, "esp_event_loop_create_default error %d", res);
 		goto wifi_error;
 	}
+
+    netif = esp_netif_create_default_wifi_ap();
+    if (!netif) {
+        ESP_LOGE(TAG, "%s wifi ap creation failed: %s", __func__, esp_err_to_name(res));
+        goto wifi_error;
+    }
+
 	res = esp_wifi_init(&cfg);
 	if(res != ESP_OK) {
 		ESP_LOGD(TAG, "esp_wifi_init error %d", res);
 		goto wifi_error;
 	}
+
+	res = esp_wifi_set_storage(WIFI_STORAGE_RAM);
+	if(res != ESP_OK) {
+		ESP_LOGD(TAG, "esp_wifi_set_storage error %s", esp_err_to_name(res));
+		goto wifi_error;
+	}
+
 	res = esp_event_handler_register(ESP_EVENT_ANY_BASE, ESP_EVENT_ANY_ID, &wifi_event_handler, nullptr);
 	if(res != ESP_OK) {
 		ESP_LOGD(TAG, "esp_event_handler_instance_register error %d", res);
 		goto wifi_error;
 	}
+
 	res = esp_wifi_set_storage(WIFI_STORAGE_RAM);
 	if(res != ESP_OK) {
 		ESP_LOGD(TAG, "esp_wifi_set_storage error %d", res);
 		goto wifi_error;
 	}
 
-	res = esp_wifi_set_mode(WIFI_MODE_STA);
+	res = esp_wifi_set_mode(WIFI_MODE_AP);
 	if(res != ESP_OK) {
 		ESP_LOGD(TAG, "esp_wifi_set_mode error %d", res);
 		goto wifi_error;
 	}
 
-	wifiInitMacAddr(ESP_IF_WIFI_STA);
+	wifiInitMacAddr(ESP_IF_WIFI_AP);
 
-	res = esp_wifi_set_protocol(WIFI_IF_STA, WIFI_PROTOCOL_11B);
-	if(res != ESP_OK) {
-		ESP_LOGD(TAG, "esp_wifi_set_protocol error %d", res);
-		goto wifi_error;
-	}
-	res = esp_wifi_set_config(WIFI_IF_STA, &wcfg);
+	res = esp_wifi_set_config(WIFI_IF_AP, &wcfg);
 	if(res != ESP_OK) {
 		ESP_LOGD(TAG, "esp_wifi_set_config error %d", res);
 		goto wifi_error;
 	}
+
+	ESP_LOGI(TAG, "Selected channel %d", wcfg.ap.channel);
+
 	ESP_LOGD(TAG, "Start!!!");
 	res = esp_wifi_start();
 	if(res != ESP_OK) {
 		ESP_LOGD(TAG, "esp_wifi_start error %d", res);
 		goto wifi_error;
 	}
+	
 	res = esp_wifi_set_promiscuous(true);
 	if(res != ESP_OK) {
 		ESP_LOGD(TAG, "esp_wifi_set_promiscuous error %d", res);
 		goto wifi_error;
 	}
-	res = esp_wifi_set_channel(mConfigChannel > 13 ? mPreferences.channel : mConfigChannel, WIFI_SECOND_CHAN_NONE);
+	res = esp_wifi_set_promiscuous_filter(&filt);
+	if(res != ESP_OK) {
+		ESP_LOGD(TAG, "esp_wifi_set_promiscuous_filter error %d", res);
+		goto wifi_error;
+	}
+
+	/*res = esp_wifi_set_channel(mConfigChannel > 13 ? mPreferences.channel : mConfigChannel, WIFI_SECOND_CHAN_NONE);
 	if(res != ESP_OK) {
 		ESP_LOGD(TAG, "esp_wifi_set_channel error %d", res);
 		goto wifi_error;
-	}
+	}*/
+
 	res = esp_wifi_set_max_tx_power(84);
 	if(res != ESP_OK) {
 		ESP_LOGD(TAG, "esp_wifi_set_max_tx_power error %d", res);
 		goto wifi_error;
 	}
+
+	res = esp_wifi_set_protocol(WIFI_IF_AP, WIFI_PROTOCOL_11B);
+	if(res != ESP_OK) {
+		ESP_LOGD(TAG, "esp_wifi_set_protocol error %d", res);
+		goto wifi_error;
+	}
+
+	res = esp_wifi_set_ps(WIFI_PS_NONE);
+	if(res != ESP_OK) {
+		ESP_LOGD(TAG, "esp_wifi_set_ps error %d", res);
+		goto wifi_error;
+	}
+
 wifi_error:
 
 #else
@@ -1265,7 +1323,7 @@ void MeshmeshComponent::wifiInitMacAddr(uint8_t index) {
 	ESP_LOGD(TAG, "wifiInitMacAddr %02X:%02X:%02X:%02X:%02X:%02X", mac[5], mac[4], mac[3], mac[2], mac[1], mac[0]);
 
 #ifdef ARDUINO_ARCH_ESP32
-	esp_err_t res = esp_wifi_set_mac(WIFI_IF_STA, mac);
+	esp_err_t res = esp_wifi_set_mac((wifi_interface_t)index, mac);
 	if(res != ESP_OK) {
 		ESP_LOGD(TAG, "esp_wifi_set_mac error %d", res);
 	}
