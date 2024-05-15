@@ -5,7 +5,7 @@ from esphome.const import CONF_ENABLE_IPV6, CONF_MIN_IPV6_ADDR_COUNT
 from esphome.core import CORE
 
 CODEOWNERS = ["@esphome/core"]
-AUTO_LOAD = ["mdns"]
+#AUTO_LOAD = ["mdns"]
 
 network_ns = cg.esphome_ns.namespace("network")
 IPAddress = network_ns.class_("IPAddress")
