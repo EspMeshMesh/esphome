@@ -12,7 +12,7 @@ from esphome.const import (
 )
 
 CODEOWNERS = ["@esphome/core"]
-AUTO_LOAD = ["mdns"]
+#AUTO_LOAD = ["mdns"]
 
 network_ns = cg.esphome_ns.namespace("network")
 IPAddress = network_ns.class_("IPAddress")
