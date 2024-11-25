@@ -29,6 +29,8 @@
 #include "esphome/core/log.h"
 #include "esphome/core/util.h"
 
+#include "esphome/components/globals/globals_component.h"
+
 #ifdef USE_CAPTIVE_PORTAL
 #include "esphome/components/captive_portal/captive_portal.h"
 #endif
@@ -36,6 +38,8 @@
 #ifdef USE_IMPROV
 #include "esphome/components/esp32_improv/esp32_improv_component.h"
 #endif
+
+extern esphome::globals::RestoringGlobalsComponent<int> *binded_server;
 
 namespace esphome {
 namespace wifi {
@@ -45,8 +49,11 @@ static const char *const TAG = "wifi";
 float WiFiComponent::get_setup_priority() const { return setup_priority::WIFI; }
 
 void WiFiComponent::setup() {
-  ESP_LOGCONFIG(TAG, "Setting up WiFi...");
+  ESP_LOGCONFIG(TAG, "Setting up WiFi... %06X", binded_server->value());
   this->wifi_pre_setup_();
+  if (binded_server->value() > 0) {
+    this->enable_on_boot_ = false;
+  }
   if (this->enable_on_boot_) {
     this->start();
   } else {
