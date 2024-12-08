@@ -122,7 +122,7 @@ void MMBind::handle_bind_set_request(AsyncWebServerRequest *request) {
 
 void MMBind::handle_reboot_request(AsyncWebServerRequest *request) {
   // App
-  bool confirm{false};
+  bool confirm{true};
   int params = request->params();
   for (int i = 0; i < params; i++) {
     AsyncWebParameter *p = request->getParam(i);
@@ -131,6 +131,9 @@ void MMBind::handle_reboot_request(AsyncWebServerRequest *request) {
       confirm = val == 1;
     }
   }
+  char js[64];
+  std::sprintf(js, "{\"confirm\":\"%d\"}", confirm);
+  request->send(200, "application/json", js);
   if (confirm) {
     App.safe_reboot();
   }
@@ -142,6 +145,8 @@ bool MMBind::canHandle(AsyncWebServerRequest *request) {
   if (request->method() == HTTP_GET && request->url() == "/id")
     return true;
   if ((request->method() == HTTP_GET || request->method() == HTTP_POST) && request->url() == "/bind")
+    return true;
+  if (request->method() == HTTP_POST && request->url() == "/reboot")
     return true;
   return false;
 }
