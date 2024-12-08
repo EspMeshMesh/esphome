@@ -1,8 +1,8 @@
 #include "mm_bind.h"
 #ifdef USE_WEBSERVER
 #include "esphome/components/json/json_util.h"
+#include "esphome/components/meshmesh/meshmesh.h"
 #include "esphome/components/network/util.h"
-#include "esphome/components/globals/globals_component.h"
 #include "esphome/core/application.h"
 #include "esphome/core/helpers.h"
 #include "esphome/core/hal.h"
@@ -12,8 +12,6 @@
 #include <cstdlib>
 #include <cstdio>
 #include <string>
-
-extern esphome::globals::RestoringGlobalsComponent<int> *binded_server;
 
 namespace esphome {
 namespace mm_bind {
@@ -35,10 +33,11 @@ std::string MMBind::get_config_json() {
 }
 
 void MMBind::setup() {
-  ESP_LOGCONFIG(TAG, "Setting up web server with bind value %06X", binded_server->value());
-  // if (binded_server->value() > 0) {
-  //   return;
-  // }
+  ESP_LOGCONFIG(TAG, "Setting up web server with bind value %06X",
+                meshmesh::MeshmeshComponent::getInstance()->bindedServer());
+  if (!meshmesh::MeshmeshComponent::getInstance()->isDisabled()) {
+    return;
+  }
   this->can_run_ = true;
   this->base_->init();
   this->base_->add_handler(this);
@@ -90,7 +89,7 @@ void MMBind::handle_id_request(AsyncWebServerRequest *request) {
 
 void MMBind::handle_bind_get_request(AsyncWebServerRequest *request) {
   JsonObject root;
-  auto val = binded_server->value();
+  auto val = meshmesh::MeshmeshComponent::getInstance()->bindedServer();
   std::string data = json::build_json([this, val](JsonObject root) {
     char idhex[12];
     std::sprintf(idhex, "%X", val);
@@ -106,12 +105,12 @@ void MMBind::handle_bind_set_request(AsyncWebServerRequest *request) {
     // ESP_LOGW(TAG, "POST[%s]: %s\n", p->name().c_str(), p->value().c_str());
     if (p->name() == "id") {
       int val = std::stoi(p->value().c_str(), 0, 16);
-      binded_server->value() = val;
+      meshmesh::MeshmeshComponent::getInstance()->setBindedServer(val);
     }
   }
 
   JsonObject root;
-  auto val = binded_server->value();
+  auto val = meshmesh::MeshmeshComponent::getInstance()->bindedServer();
   std::string data = json::build_json([this, val](JsonObject root) {
     char idhex[12];
     std::sprintf(idhex, "%X", val);

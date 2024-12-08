@@ -29,8 +29,6 @@
 #include "esphome/core/log.h"
 #include "esphome/core/util.h"
 
-#include "esphome/components/globals/globals_component.h"
-
 #ifdef USE_CAPTIVE_PORTAL
 #include "esphome/components/captive_portal/captive_portal.h"
 #endif
@@ -39,7 +37,9 @@
 #include "esphome/components/esp32_improv/esp32_improv_component.h"
 #endif
 
-extern esphome::globals::RestoringGlobalsComponent<int> *binded_server;
+#ifdef USE_MESH_MESH
+#include "esphome/components/meshmesh/meshmesh.h"
+#endif
 
 namespace esphome {
 namespace wifi {
@@ -50,9 +50,10 @@ float WiFiComponent::get_setup_priority() const { return setup_priority::WIFI; }
 
 void WiFiComponent::setup() {
   ESP_LOGCONFIG(TAG, "Setting up WiFi...");
-  ESP_LOGCONFIG(TAG, "Bindded meshmesh server is %06X", binded_server->value());
+  ESP_LOGCONFIG(TAG, "Meshmesh binded server is %06X", meshmesh::MeshmeshComponent::getInstance()->bindedServer());
   this->wifi_pre_setup_();
-  if (binded_server->value() > 0) {
+
+  if (!meshmesh::MeshmeshComponent::getInstance()->isDisabled()) {
     this->enable_on_boot_ = false;
   }
   if (this->enable_on_boot_) {
