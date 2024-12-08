@@ -82,6 +82,7 @@ struct MeshmeshSettings {
   uint8_t channel;
   uint8_t txPower;
   uint32_t groups;
+  uint32_t bindedServer;
 } __attribute__((packed));
 
 class MeshmeshComponent : public Component {
@@ -114,12 +115,20 @@ class MeshmeshComponent : public Component {
 #endif
  public:
   MeshmeshComponent(int baud_rate, int tx_buffer, int rx_buffer);
+  void preSetupPreferences();
   void pre_setup();
+  bool isDisabled() const {
+    return mPreferences.bindedServer == 0;
+  }  // bindedServer can be == 0 only if is enabled and not binded
+  uint32_t bindedServer() const { return mPreferences.bindedServer; }
+  void setBindedServer(uint32_t server);
   void set_uart_selection(UARTSelection uart_selection) { /*uart_ = uart_selection;*/
   }
 #ifdef USE_ESP32
   static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data);
+  void setupIdfWifi();
 #endif
+  void setupWifi();
   void setup() override;
   void setChannel(int channel) { mConfigChannel = channel; }
   void setAesPassword(const char *password) { mAesPassword = password; }
