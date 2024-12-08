@@ -135,7 +135,7 @@ tests/.esphome/
 /.temp/
 .pio/
 
-sdkconfig.*
+sdkconfig*
 !sdkconfig.defaults
 
 .tests/
@@ -143,3 +143,4 @@ sdkconfig.*
 /components
 /managed_components
 
+dependencies.lock
