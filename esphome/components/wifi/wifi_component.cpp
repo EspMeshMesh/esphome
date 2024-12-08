@@ -49,7 +49,8 @@ static const char *const TAG = "wifi";
 float WiFiComponent::get_setup_priority() const { return setup_priority::WIFI; }
 
 void WiFiComponent::setup() {
-  ESP_LOGCONFIG(TAG, "Setting up WiFi... %06X", binded_server->value());
+  ESP_LOGCONFIG(TAG, "Setting up WiFi...");
+  ESP_LOGCONFIG(TAG, "Bindded meshmesh server is %06X", binded_server->value());
   this->wifi_pre_setup_();
   if (binded_server->value() > 0) {
     this->enable_on_boot_ = false;
