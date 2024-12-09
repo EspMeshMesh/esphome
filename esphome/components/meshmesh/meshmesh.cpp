@@ -49,6 +49,8 @@ namespace meshmesh {
 static const char *TAG = "meshmesh";
 
 #define UNICAST_DEFAULT_PORT 0
+#define MAX_CHANNEL 13
+#define DEF_CHANNEL 6
 
 MeshmeshComponent *MeshmeshComponent::singleton = nullptr;
 
@@ -120,7 +122,8 @@ void setupIdfWifi() {
   strcpy((char *) wcfg.ap.ssid, "esphome");
   strcpy((char *) wcfg.ap.password, "esphome");
   wcfg.ap.ssid_len = 0;
-  wcfg.ap.channel = mConfigChannel > 13 ? mPreferences.channel : mConfigChannel;
+  wcfg.ap.channel = mPreferences.channel > MAX_CHANNEL ? (mConfigChannel > MAX_CHANNEL ? DEF_CHANNEL : mConfigChannel)
+                                                       : mPreferences.channel;
   wcfg.ap.authmode = WIFI_AUTH_OPEN;
   wcfg.ap.ssid_hidden = 1;
   wcfg.ap.max_connection = 4;
@@ -132,7 +135,8 @@ void setupIdfWifi() {
                         }};
 
   wcfg.ap.ssid_len = 0;
-  wcfg.ap.channel = mConfigChannel > 13 ? mPreferences.channel : mConfigChannel;
+  wcfg.ap.channel = mPreferences.channel > MAX_CHANNEL ? (mConfigChannel > MAX_CHANNEL ? DEF_CHANNEL : mConfigChannel)
+                                                       : mPreferences.channel;
   wcfg.ap.authmode = WIFI_AUTH_OPEN;
   wcfg.ap.ssid_hidden = 1;
   wcfg.ap.max_connection = 4;
@@ -256,7 +260,8 @@ void MeshmeshComponent::setupWifi() {
   wifiInitMacAddr(STATION_IF);
   wifi_station_set_auto_connect(false);
   wifi_set_phy_mode(PHY_MODE_11B);
-  wifi_set_channel(mConfigChannel > 13 ? mPreferences.channel : mConfigChannel);
+  wifi_set_channel(mPreferences.channel > MAX_CHANNEL ? (mConfigChannel > MAX_CHANNEL ? DEF_CHANNEL : mConfigChannel)
+                                                      : mPreferences.channel);
   system_phy_set_max_tpw(mPreferences.txPower);
   ESP_LOGCONFIG(TAG, "Channel cfg:%d pref:%d", mConfigChannel, mPreferences.channel);
 #endif
@@ -332,7 +337,7 @@ void MeshmeshComponent::dump_config() {
   ESP_LOGCONFIG(TAG, "Sys cip ID: %08lX", Discovery::chipId());
 #else
   ESP_LOGCONFIG(TAG, "Sys cip ID: %08X", system_get_chip_id());
-  ESP_LOGCONFIG(TAG, "Channel: %d", wifi_get_channel());
+  ESP_LOGCONFIG(TAG, "Curr. Channel: %d Saved Channel: %d", wifi_get_channel(), mPreferences.channel);
   ESP_LOGCONFIG(TAG, "Component is %s", isDisabled() ? "Disabled" : "Enabled");
   ESP_LOGCONFIG(TAG, "Bind server mode active with server 0x%06X", mPreferences.bindedServer);
 #endif
@@ -756,6 +761,18 @@ void MeshmeshComponent::handleFrame(uint8_t *buf, uint16_t len, DataSrc src, uin
           mPreferences.bindedServer = 0;
           mPreferencesObject.save(&mPreferences);
           buf[0] = CMD_BIND_CLEAR_REP;
+          commandReply(buf, 1);
+          err = 0;
+        }
+      }
+      break;
+    case CMD_CHANNEL_SET_REQ:
+      if (len == 2) {
+        uint8_t channel = buf[1];
+        if (channel < MAX_CHANNEL) {
+          mPreferences.channel = channel;
+          mPreferencesObject.save(&mPreferences);
+          buf[0] = CMD_CHANNEL_SET_REP;
           commandReply(buf, 1);
           err = 0;
         }
