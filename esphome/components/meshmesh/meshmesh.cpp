@@ -778,6 +778,15 @@ void MeshmeshComponent::handleFrame(uint8_t *buf, uint16_t len, DataSrc src, uin
         }
       }
       break;
+    case CMD_NODE_CONFIG_REQ:
+      if (len == 1) {
+        uint8_t rep[sizeof(MeshmeshSettings) + 1];
+        rep[0] = CMD_NODE_CONFIG_REP;
+        memcpy(rep + 1, &mPreferences, sizeof(MeshmeshSettings));
+        commandReply(rep, sizeof(MeshmeshSettings) + 1);
+        err = 0;
+      }
+      break;
     case CMD_LOG_DEST_REQ:
       if (len == 1) {
         uint8_t rep[5] = {0};
