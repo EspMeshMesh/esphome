@@ -17,37 +17,34 @@
 namespace esphome {
 namespace socket {
 
-
 static const char *const TAG = "socket.meshmesh";
 
 class MeshmeshRawImpl : public Socket {
-  public:
-  MeshmeshRawImpl(uint32_t from, uint16_t handle, bool server): mFrom(from), mHandle(handle), mServer(server) {
+ public:
+  MeshmeshRawImpl(uint32_t from, uint16_t handle, bool server) : mFrom(from), mHandle(handle), mServer(server) {
     ESP_LOGD(TAG, "MeshmeshRawImpl::MeshmeshRawImpl from %ld handle %d", from, handle);
     mConnectedPath = meshmesh::MeshmeshComponent::getInstance()->getConnectedPath();
-    if(!mServer) {
+    if (!mServer) {
       mConnectedPath->setReceiveCallback(
           [](void *arg, uint8_t *data, uint16_t size, uint8_t connid) {
-              auto a_this = (MeshmeshRawImpl *)arg;
-              a_this->onRecv(data, size);
+            auto a_this = (MeshmeshRawImpl *) arg;
+            a_this->onRecv(data, size);
           },
           [](void *arg) {
-              auto a_this = (MeshmeshRawImpl *)arg;
-              a_this->onDisconnect();
+            auto a_this = (MeshmeshRawImpl *) arg;
+            a_this->onDisconnect();
           },
-          this, from, handle
-      );
+          this, from, handle);
     }
   }
 
   ~MeshmeshRawImpl() override {
     ESP_LOGD(TAG, "MeshmeshRawImpl::~MeshmeshRawImpl from %ld handle %d", mFrom, mHandle);
-    if(!mServer && mActive) close();
+    if (!mServer && mActive)
+      close();
   }
 
-  void init() {
-    ESP_LOGD(TAG, "MeshmeshRawImpl::init");
-  }
+  void init() { ESP_LOGD(TAG, "MeshmeshRawImpl::init"); }
 
   std::unique_ptr<Socket> accept(struct sockaddr *addr, socklen_t *addrlen) override {
     if (mAcceptedSockets.empty()) {
@@ -57,7 +54,8 @@ class MeshmeshRawImpl : public Socket {
 
     std::unique_ptr<MeshmeshRawImpl> sock = std::move(mAcceptedSockets.front());
     mAcceptedSockets.pop();
-    if (addr != nullptr) sock->getpeername(addr, addrlen);
+    if (addr != nullptr)
+      sock->getpeername(addr, addrlen);
 
     ESP_LOGD(TAG, "MeshmeshRawImpl::accept(%p)", sock.get());
     return std::unique_ptr<Socket>(std::move(sock));
@@ -74,12 +72,12 @@ class MeshmeshRawImpl : public Socket {
     auto *addr4 = reinterpret_cast<const sockaddr_in *>(name);
     in_port_t port = ntohs(addr4->sin_port);
 
-    //ip_addr_t ip;
-    //ip.u_addr.ip4 = addr4->sin_addr.s_addr;
-    //ESP_LOGD(TAG, "MeshmeshRawImpl::bind(ip=%u port=%u)", ip.addr, port);
-    mConnectedPath->bindPort([](void *s, uint32_t from, uint16_t handle) {
-      ((MeshmeshRawImpl *)s)->onNewClient(from, handle);
-    }, this, port);
+    // ip_addr_t ip;
+    // ip.u_addr.ip4 = addr4->sin_addr.s_addr;
+    // ESP_LOGD(TAG, "MeshmeshRawImpl::bind(ip=%u port=%u)", ip.addr, port);
+    mConnectedPath->bindPort(
+        [](void *s, uint32_t from, uint16_t handle) { ((MeshmeshRawImpl *) s)->onNewClient(from, handle); }, this,
+        port);
 
     return 0;
   }
@@ -119,17 +117,14 @@ class MeshmeshRawImpl : public Socket {
   std::string getpeername() override {
     char buffer[24];
     uint32_t ip4 = mFrom;
-    snprintf(buffer, sizeof(buffer), "%d.%d.%d.%d", (uint8_t)((ip4 >> 24) & 0xFF), (uint8_t)((ip4 >> 16) & 0xFF), (uint8_t)((ip4 >> 8) & 0xFF), (uint8_t)((ip4 >> 0) & 0xFF));
+    snprintf(buffer, sizeof(buffer), "%d.%d.%d.%d", (uint8_t) ((ip4 >> 24) & 0xFF), (uint8_t) ((ip4 >> 16) & 0xFF),
+             (uint8_t) ((ip4 >> 8) & 0xFF), (uint8_t) ((ip4 >> 0) & 0xFF));
     return std::string(buffer);
   }
 
-  int getsockname(struct sockaddr *name, socklen_t *addrlen) override {
-    return 0;
-  }
+  int getsockname(struct sockaddr *name, socklen_t *addrlen) override { return 0; }
 
-  std::string getsockname() override {
-    return std::string("*");
-  }
+  std::string getsockname() override { return std::string("*"); }
 
   int getsockopt(int level, int optname, void *optval, socklen_t *optlen) override {
     ESP_LOGD(TAG, "MeshmeshRawImpl::getsockopt(level=%d,optname=%d)", level, optname);
@@ -147,12 +142,13 @@ class MeshmeshRawImpl : public Socket {
   }
 
   ssize_t read(void *buf, size_t len) override {
-    if(!mActive) {
+    if (!mActive) {
       errno = ENOENT;
       return -1;
     }
 
-    if (len == 0) return 0;
+    if (len == 0)
+      return 0;
 
     if (mRxQueue.size() < len) {
       errno = EWOULDBLOCK;
@@ -160,14 +156,14 @@ class MeshmeshRawImpl : public Socket {
     }
 
     uint8_t *buf8 = reinterpret_cast<uint8_t *>(buf);
-    for(int i=0; i<len; i++) {
+    for (int i = 0; i < len; i++) {
       *buf8++ = mRxQueue.front();
       mRxQueue.pop();
     }
 
     return len;
   }
-  
+
   ssize_t readv(const struct iovec *iov, int iovcnt) override {
     ssize_t ret = 0;
     for (int i = 0; i < iovcnt; i++) {
@@ -186,7 +182,7 @@ class MeshmeshRawImpl : public Socket {
   }
 
   ssize_t write(const void *buf, size_t len) override {
-    mConnectedPath->sendDataTo((const uint8_t *)buf, (uint16_t)len, mFrom, mHandle);
+    mConnectedPath->sendDataTo((const uint8_t *) buf, (uint16_t) len, mFrom, mHandle);
     return len;
   }
 
@@ -198,12 +194,12 @@ class MeshmeshRawImpl : public Socket {
     }
     return written;
   }
-  
+
   ssize_t sendto(const void *buf, size_t len, int flags, const struct sockaddr *to, socklen_t tolen) override {
     // return ::sendto(fd_, buf, len, flags, to, tolen);
     return 0;
   }
-  
+
   int setblocking(bool blocking) override {
     if (blocking) {
       // blocking operation not supported
@@ -213,7 +209,7 @@ class MeshmeshRawImpl : public Socket {
     return 0;
   }
 
-protected:
+ protected:
   void onNewClient(uint32_t from, uint16_t handle) {
     ESP_LOGD(TAG, "MeshmeshRawImpl::onNewClient(from=%ld handle=%d)", from, handle);
     auto sock = make_unique<MeshmeshRawImpl>(from, handle, false);
@@ -222,12 +218,13 @@ protected:
   }
 
   void onRecv(uint8_t *data, uint16_t size) {
-    //ESP_LOGD(TAG, "MeshmeshRawImpl::onRecv(size=%d)", size);
-    if(mRxQueue.size() + size > MAX_RX_QUEUE_SIZE) {
+    // ESP_LOGD(TAG, "MeshmeshRawImpl::onRecv(size=%d)", size);
+    if (mRxQueue.size() + size > MAX_RX_QUEUE_SIZE) {
       ESP_LOGE(TAG, "MeshmeshRawImpl::onRecv(size=%d) queue of size %d is full", size, mRxQueue.size());
       size = MAX_RX_QUEUE_SIZE - mRxQueue.size();
     }
-    for(int i=0; i<size; i++) mRxQueue.push(data[i]);
+    for (int i = 0; i < size; i++)
+      mRxQueue.push(data[i]);
   }
 
   void onDisconnect() {
