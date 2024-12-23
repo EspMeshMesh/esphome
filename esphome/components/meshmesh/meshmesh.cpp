@@ -697,7 +697,8 @@ void MeshmeshComponent::commandReply(const uint8_t *buff, uint16_t len) {
       break;
     case SRC_CONNPATH:
 #ifdef USE_CONNECTED_PROTOCOL
-      mConnectedPath->sendDataTo(buff, len, mConnectionId);
+      // mConnectedPath->sendDataTo(buff, len, mConnectionId);
+      ESP_LOGE(TAG, "commandReply SRC_CONNPATH not handled");
 #endif
       break;
     case SRC_FILTER:

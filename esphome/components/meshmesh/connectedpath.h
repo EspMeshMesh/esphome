@@ -87,12 +87,8 @@ class ConnectedPath {
   void loop();
   uint8_t sendRawRadioPacket(ConnectedPathPacket *pkt);
   uint8_t sendRadioPacket(ConnectedPathPacket *pkt, bool forward, bool initHeader);
-
-  void sendDataTo(const uint8_t *data, uint16_t size, uint8_t connid);
-  void sendDataTo(const uint8_t *data, uint16_t size, uint32_t from, uint16_t handle);
   void sendRadioDataTo(const uint8_t *data, uint16_t size, uint8_t connid, bool forward);
   void sendRadioDataTo(const uint8_t *data, uint16_t size, uint32_t from, uint16_t handle);
-
   void closeConnection_(ConnectedPathConnections *conn);
   void closeConnection(uint32_t from, uint16_t handle);
   void closeAllConnections();
