@@ -109,6 +109,7 @@ class ConnectedPath {
   void openConnectionAck(uint32_t from, uint16_t handle, uint8_t *buffer, uint16_t size);
   void disconnect(uint8_t *buffer, uint16_t size, uint32_t from);
   void sendData(uint8_t *buffer, uint16_t size, uint32_t from);
+  uint8_t sendData2(uint8_t *buffer, uint16_t size, uint32_t source, uint16_t handle);
   void invalidHandle(uint32_t from, uint16_t handle);
   void sendDataError(uint32_t from, uint16_t handle);
   void processOutputBuffer();
@@ -139,9 +140,11 @@ class ConnectedPath {
 
   uint8_t findConnection(uint32_t from, uint16_t handle, bool &forward, uint32_t &otherAddress, uint16_t &otherHandle);
   uint8_t findConnectionIndex(uint32_t from, uint16_t handle, bool *forward);
+  uint8_t findConnectionPeer(uint8_t connIdx, bool forward, uint32_t &peerAddress, uint16_t &peerHandle);
 
   void sendUartPacket(uint8_t command, uint16_t handle, uint8_t *data, uint16_t size);
-  ConnectedPathPacket *cratePacket(uint8_t subprot, uint16_t size, uint32_t to, uint16_t handle);
+  ConnectedPathPacket *cratePacket(uint8_t subprot, uint16_t size, uint32_t to, uint16_t handle,
+                                   const uint8_t *payload);
   void sendSimplePacket(uint8_t subprot, uint32_t to, uint16_t handle, bool forward);
   void debugConnection() const;
 
