@@ -87,8 +87,12 @@ class ConnectedPath {
   void loop();
   uint8_t sendRawRadioPacket(ConnectedPathPacket *pkt);
   uint8_t sendRadioPacket(ConnectedPathPacket *pkt, bool forward, bool initHeader);
+
   void sendDataTo(const uint8_t *data, uint16_t size, uint8_t connid);
   void sendDataTo(const uint8_t *data, uint16_t size, uint32_t from, uint16_t handle);
+  void sendRadioDataTo(const uint8_t *data, uint16_t size, uint8_t connid, bool forward);
+  void sendRadioDataTo(const uint8_t *data, uint16_t size, uint32_t from, uint16_t handle);
+
   void closeConnection_(ConnectedPathConnections *conn);
   void closeConnection(uint32_t from, uint16_t handle);
   void closeAllConnections();
@@ -136,7 +140,10 @@ class ConnectedPath {
  private:
   const ConnectedPathConnections *findConnection(uint32_t from, uint16_t handle) const;
   ConnectedPathConnections *findConnection(uint32_t from, uint16_t handle);
+
   uint8_t findConnection(uint32_t from, uint16_t handle, bool &forward, uint32_t &otherAddress, uint16_t &otherHandle);
+  uint8_t findConnectionIndex(uint32_t from, uint16_t handle, bool *forward);
+
   void sendUartPacket(uint8_t command, uint16_t handle, uint8_t *data, uint16_t size);
   ConnectedPathPacket *cratePacket(uint8_t subprot, uint16_t size, uint32_t to, uint16_t handle);
   void sendSimplePacket(uint8_t subprot, uint32_t to, uint16_t handle, bool forward);
@@ -155,7 +162,6 @@ class ConnectedPath {
  private:
   bool mIsRadioBusy{false};
   ConnectedPathPacket *mRetransmitPacket = nullptr;
-  std::list<ConnectedPathPacket *> mPendingPackets;
   MemRingBuffer mRadioOutputBuffer;
 };
 
