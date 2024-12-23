@@ -55,7 +55,7 @@ void ConnectedPath::loop() {
   if (mRetransmitPacket != nullptr) {
     sendRawRadioPacket(mRetransmitPacket);
     mRetransmitPacket = nullptr;
-  } else if (mRadioOutputBuffer.filledSpace() > 0) {
+  } else if (mRadioOutputBuffer.filledSpace() > 0 && mIsRadioBusy == false) {
     processOutputBuffer();
   }
 
@@ -74,7 +74,8 @@ void ConnectedPath::loop() {
 }
 
 uint8_t ConnectedPath::sendRawRadioPacket(ConnectedPathPacket *pkt) {
-  ESP_LOGD(TAG, "ConnectedPath::sendRawRadioPacket pending queue %d", mPendingPackets.size());
+  ESP_LOGD(TAG, "ConnectedPath::sendRawRadioPacket sending to %06X %d bytes with flags %d", pkt->getTarget(),
+           pkt->clearDataSize(), pkt->getHeader()->flags);
   if (pkt->encryptClearData()) {
     mIsRadioBusy = true;
     uint32_t target = pkt->getTarget();
@@ -102,13 +103,7 @@ uint8_t ConnectedPath::sendRadioPacket(ConnectedPathPacket *pkt, bool forward, b
   // Set this class as destination sent callback for retransmisisons
   pkt->setCallback(radioPacketSentCb, this);
 
-  if (mIsRadioBusy) {
-    mPendingPackets.push_back(pkt);
-    ESP_LOGD(TAG, "ConnectedPath::sendRadioPacket busy pending %d", mPendingPackets.size());
-    return PKT_SEND_OK;
-  } else {
-    return sendRawRadioPacket(pkt);
-  }
+  return sendRawRadioPacket(pkt);
 }
 
 void ConnectedPath::sendDataTo(const uint8_t *data, uint16_t size, uint8_t connid) {
@@ -136,6 +131,31 @@ void ConnectedPath::sendDataTo(const uint8_t *data, uint16_t size, uint32_t from
     pkt->setPayload(data);
     sendRadioPacket(pkt, false, true);
   }
+}
+
+void ConnectedPath::sendRadioDataTo(const uint8_t *data, uint16_t size, uint8_t connid, bool forward) {
+  if (connid >= CONNPATH_MAX_CONNECTIONS || mConnectsions[connid].sourceAddr == CONNPATH_INVALID_ADDRESS) {
+    return;
+  }
+
+  ConnectedPathOutputBufferHeader header;
+  header.pkttime = millis();
+  header.connId = connid;
+  header.forward = forward ? 1 : 0;
+  header.dataSize = size;
+  mRadioOutputBuffer.pushData((uint8_t *) &header, sizeof(header));
+  mRadioOutputBuffer.pushData(data, size);
+
+  ESP_LOGD(TAG, "ConnectedPath::sendRadioDataTo connid %d size %d forward %d from %06X:%04X to %06X:%04X", connid, size,
+           forward, mConnectsions[connid].sourceAddr, mConnectsions[connid].sourceHandle,
+           mConnectsions[connid].destAddr, mConnectsions[connid].destHandle);
+}
+
+void ConnectedPath::sendRadioDataTo(const uint8_t *data, uint16_t size, uint32_t from, uint16_t handle) {
+  bool forward;
+  uint8_t connid = findConnectionIndex(from, handle, &forward);
+  if (connid < CONNPATH_MAX_CONNECTIONS)
+    sendRadioDataTo(data, size, connid, forward);
 }
 
 void ConnectedPath::closeConnection_(ConnectedPathConnections *conn) {
@@ -267,12 +287,6 @@ void ConnectedPath::radioPacketSent(uint8_t status, RadioPacket *pkt) {
         // FIXME: Signal error to packet creator
       }
     }
-  }
-  if (mPendingPackets.size() > 0) {
-    ConnectedPathPacket *pkt = mPendingPackets.front();
-    mPendingPackets.pop_front();
-    sendRawRadioPacket(pkt);
-    return;
   }
   // Free Radio for next packet
   mIsRadioBusy = false;
@@ -510,6 +524,7 @@ void ConnectedPath::processOutputBuffer() {
   }
 
   if (bufferSize > 0 && CONN_IS_VALID(lastConnId)) {
+    lastForward = false;
     ConnectedPathConnections *conn = mConnectsions + lastConnId;
     ConnectedPathPacket *pkt = new ConnectedPathPacket(nullptr, nullptr);
     pkt->allocClearData(bufferSize);
@@ -517,9 +532,9 @@ void ConnectedPath::processOutputBuffer() {
     pkt->setTarget(lastForward ? conn->destAddr : conn->sourceAddr,
                    lastForward ? conn->destHandle : conn->sourceHandle);
     pkt->setPayload(buffer);
-    sendRadioPacket(pkt, lastForward, true);
-    ESP_LOGD(TAG, "ConnectedPath::processOutputBuffer processed %d after %d", bufferSize,
+    ESP_LOGD(TAG, "ConnectedPath::processOutputBuffer processed size %d after %dms", bufferSize,
              MeshmeshComponent::elapsedMillis(now, lastPktTime));
+    sendRadioPacket(pkt, false, true);
   }
 }
 
@@ -572,6 +587,22 @@ uint8_t ConnectedPath::findConnection(uint32_t source, uint16_t sourceHandle, bo
   return CONNPATH_MAX_CONNECTIONS;
 }
 
+uint8_t ConnectedPath::findConnectionIndex(uint32_t from, uint16_t handle, bool *forward) {
+  for (int i = 0; i < CONNPATH_MAX_CONNECTIONS; i++) {
+    if (from == mConnectsions[i].sourceAddr && handle == mConnectsions[i].sourceHandle) {
+      if (forward)
+        *forward = true;
+      return i;
+    }
+    if (from == mConnectsions[i].destAddr && handle == mConnectsions[i].destHandle) {
+      if (forward)
+        *forward = false;
+      return i;
+    }
+  }
+  return CONNPATH_MAX_CONNECTIONS;
+}
+
 void ConnectedPath::sendUartPacket(uint8_t command, uint16_t handle, uint8_t *data, uint16_t size) {
   if (size == 0) {
     uint8_t _data[4];
@@ -600,8 +631,8 @@ ConnectedPathPacket *ConnectedPath::cratePacket(uint8_t subprot, uint16_t size, 
 
 void ConnectedPath::sendSimplePacket(uint8_t subprot, uint32_t destination, uint16_t destinationHandle, bool forward) {
   if (destination == CONNPATH_COORDINATOR_ADDRESS) {
-    // Only send to UART if the packet is travelling from destination to source and the destination is 0 (coordinator),
-    // otherwise do nothing
+    // Only send to UART if the packet is travelling from destination to source and the destination is 0
+    // (coordinator), otherwise do nothing
     if (forward == false)
       sendUartPacket(subprot, destinationHandle, nullptr, 0);
   } else {
