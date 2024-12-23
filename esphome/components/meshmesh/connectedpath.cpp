@@ -7,6 +7,11 @@
 #include "meshmesh.h"
 #include "commands.h"
 
+#define RES_OK 0
+#define RES_ERROR 1
+#define RES_INVALID_HANDLE 2
+#define FORWARD2TXT(X) (X ? "-->" : "<--")
+
 namespace esphome {
 namespace meshmesh {
 
@@ -119,8 +124,8 @@ void ConnectedPath::sendRadioDataTo(const uint8_t *data, uint16_t size, uint8_t 
   mRadioOutputBuffer.pushData((uint8_t *) &header, sizeof(header));
   mRadioOutputBuffer.pushData(data, size);
 
-  ESP_LOGD(TAG, "ConnectedPath::sendRadioDataTo connid %d size %d forward %d from %06X:%04X to %06X:%04X", connid, size,
-           forward, mConnectsions[connid].sourceAddr, mConnectsions[connid].sourceHandle,
+  ESP_LOGD(TAG, "ConnectedPath::sendRadioDataTo connid %d size %d from %06X:%04X %s to %06X:%04X", connid, size,
+           mConnectsions[connid].sourceAddr, mConnectsions[connid].sourceHandle, FORWARD2TXT(forward),
            mConnectsions[connid].destAddr, mConnectsions[connid].destHandle);
 }
 
@@ -161,11 +166,16 @@ void ConnectedPath::closeAllConnections() {
 uint8_t ConnectedPath::receiveUartPacket(uint8_t *data, uint16_t size) {
   if (size >= sizeof(ConnectedPathHeaderSt)) {
     ConnectedPathHeader_t *header = (ConnectedPathHeader_t *) data;
+    uint8_t *payload = data + sizeof(ConnectedPathHeaderSt);
+    uint16_t payloadSize = size - sizeof(ConnectedPathHeaderSt);
     // ESP_LOGD(TAG, "ConnectedPath::receiveUartPacket size %d subp %d", size, header->subprotocol);
+
     if (header->subprotocol == CONNPATH_OPEN_CONNECTION_REQ) {
       openConnection(data, size, 0);
     } else if (header->subprotocol == CONNPATH_SEND_DATA) {
-      sendData(data, size, 0);
+      if (sendData2(payload, payloadSize, 0, header->sourceHandle) == RES_INVALID_HANDLE) {
+        sendSimplePacket(CONNPATH_INVALID_HANDLE, 0, header->sourceHandle, false);
+      }
     } else if (header->subprotocol == CONNPATH_DISCONNECT_REQ) {
       disconnect(data, size, 0);
     } else if (header->subprotocol == CONNPATH_INVALID_HANDLE) {
@@ -230,7 +240,7 @@ void ConnectedPath::setReceiveCallback(ConnectedPathReceiveHandler recvCb, Conne
 }
 
 void ConnectedPath::bindPort(ConnectedPathNewConnectionHandler h, void *arg, uint16_t port) {
-  ESP_LOGD(TAG, "ConnectedPath::bindPort port %d", port);
+  ESP_LOGD(TAG, "ConnectedPath::bind port %d", port);
   ConnectedPathBindedPort_t newclient = {h, arg, port};
   mBindedPorts.push_back(newclient);
 }
@@ -343,7 +353,7 @@ void ConnectedPath::openConnectionForMe(ConnectedPathConnections *conn, uint16_t
 
   for (ConnectedPathBindedPort_t bp : mBindedPorts) {
     if (bp.port == port)
-      bp.handler(bp.arg, conn->sourceAddr, conn->sourceHandle);
+      bp.handler(bp.arg, conn->destAddr, conn->destHandle);
   }
 }
 
@@ -413,8 +423,7 @@ void ConnectedPath::sendData(uint8_t *buffer, uint16_t size, uint32_t source) {
       mConnectsions[connid].lastTime = millis();
       // From source to target
       ConnectedPathConnections *conn = mConnectsions + connid;
-      // ESP_LOGD(TAG, "ConnectedPath::sendData target %06X:%04X dir %s", otherAddress, otherHandle, forward ? "-->" :
-      // "<--");
+      ESP_LOGD(TAG, "ConnectedPath::sendData target %06X:%04X dir %s", otherAddress, otherHandle, FORWARD2TXT(forward));
       if (otherAddress == 0) {
         if (forward) {
           if (conn->receive != nullptr)
@@ -422,6 +431,7 @@ void ConnectedPath::sendData(uint8_t *buffer, uint16_t size, uint32_t source) {
         } else
           sendUartPacket(CONNPATH_SEND_DATA, otherHandle, buffer + sizeof(ConnectedPathHeaderSt), header->dataLength);
       } else {
+        ESP_LOGD(TAG, "ConnectedPath::sendData to %02X%02X%02X%02X", buffer[0], buffer[1], buffer[2], buffer[3]);
         ConnectedPathPacket *pkt = new ConnectedPathPacket(nullptr, nullptr);
         pkt->fromRawData(buffer, size);
         pkt->setTarget(otherAddress, otherHandle);
@@ -432,6 +442,39 @@ void ConnectedPath::sendData(uint8_t *buffer, uint16_t size, uint32_t source) {
       sendSimplePacket(CONNPATH_INVALID_HANDLE, source, header->sourceHandle, true);
     }
   }
+}
+
+uint8_t ConnectedPath::sendData2(uint8_t *buffer, uint16_t size, uint32_t source, uint16_t handle) {
+  // ESP_LOGD(TAG, "ConnectedPath::sendData2 flags %d size %d", header->flags, size);
+  bool forward;
+  int8_t connidx = findConnectionIndex(source, handle, &forward);
+
+  if (CONN_IS_VALID(connidx)) {
+    mConnectsions[connidx].lastTime = millis();
+
+    uint32_t destAddress;
+    uint16_t destHandle;
+    findConnectionPeer(connidx, forward, destAddress, destHandle);
+    ConnectedPathConnections *conn = mConnectsions + connidx;
+
+    ESP_LOGD(TAG, "ConnectedPath::sendData2 target %06X:%04X dir %s", destAddress, destHandle, FORWARD2TXT(forward));
+
+    if (destAddress == CONNPATH_COORDINATOR_ADDRESS) {
+      if (forward) {
+        if (conn->receive != nullptr)
+          conn->receive(conn->arg, buffer, size, connidx);
+      } else
+        sendUartPacket(CONNPATH_SEND_DATA, destHandle, buffer, size);
+    } else {
+      // ESP_LOGD(TAG, "ConnectedPath::sendData to %02X%02X%02X%02X", buffer[0], buffer[1], buffer[2], buffer[3]);
+      ConnectedPathPacket *pkt = cratePacket(CONNPATH_SEND_DATA, size, destAddress, destHandle, buffer);
+      sendRadioDataTo(buffer, size, connidx, forward);
+    }
+  } else {
+    ESP_LOGE(TAG, "ConnectedPath::sendData2 request invalid handle from %06lX:%04X", source, handle);
+    return RES_INVALID_HANDLE;
+  }
+  return RES_OK;
 }
 
 /**
@@ -497,14 +540,10 @@ void ConnectedPath::processOutputBuffer() {
   }
 
   if (bufferSize > 0 && CONN_IS_VALID(lastConnId)) {
-    lastForward = false;
     ConnectedPathConnections *conn = mConnectsions + lastConnId;
-    ConnectedPathPacket *pkt = new ConnectedPathPacket(nullptr, nullptr);
-    pkt->allocClearData(bufferSize);
-    pkt->getHeader()->subprotocol = CONNPATH_SEND_DATA;
-    pkt->setTarget(lastForward ? conn->destAddr : conn->sourceAddr,
-                   lastForward ? conn->destHandle : conn->sourceHandle);
-    pkt->setPayload(buffer);
+    ConnectedPathPacket *pkt =
+        cratePacket(CONNPATH_SEND_DATA, bufferSize, lastForward ? conn->destAddr : conn->sourceAddr,
+                    lastForward ? conn->destHandle : conn->sourceHandle, buffer);
     ESP_LOGD(TAG, "ConnectedPath::processOutputBuffer processed size %d after %dms", bufferSize,
              MeshmeshComponent::elapsedMillis(now, lastPktTime));
     sendRadioPacket(pkt, false, true);
@@ -584,6 +623,22 @@ uint8_t ConnectedPath::findConnectionIndex(uint32_t from, uint16_t handle, bool 
   return CONNPATH_MAX_CONNECTIONS;
 }
 
+uint8_t ConnectedPath::findConnectionPeer(uint8_t connIdx, bool forward, uint32_t &peerAddress, uint16_t &peerHandle) {
+  if (connIdx >= CONNPATH_MAX_CONNECTIONS) {
+    return 1;
+  }
+
+  if (forward) {
+    peerAddress = mConnectsions[connIdx].destAddr;
+    peerHandle = mConnectsions[connIdx].destHandle;
+  } else {
+    peerAddress = mConnectsions[connIdx].sourceAddr;
+    peerHandle = mConnectsions[connIdx].sourceHandle;
+  }
+
+  return 0;
+}
+
 void ConnectedPath::sendUartPacket(uint8_t command, uint16_t handle, uint8_t *data, uint16_t size) {
   if (size == 0) {
     uint8_t _data[4];
@@ -602,11 +657,14 @@ void ConnectedPath::sendUartPacket(uint8_t command, uint16_t handle, uint8_t *da
   }
 }
 
-ConnectedPathPacket *ConnectedPath::cratePacket(uint8_t subprot, uint16_t size, uint32_t to, uint16_t handle) {
+ConnectedPathPacket *ConnectedPath::cratePacket(uint8_t subprot, uint16_t size, uint32_t target, uint16_t handle,
+                                                const uint8_t *payload) {
   ConnectedPathPacket *pkt = new ConnectedPathPacket(nullptr, nullptr);
   pkt->allocClearData(size);
   pkt->getHeader()->subprotocol = subprot;
-  pkt->setTarget(to, handle);
+  pkt->setTarget(target, handle);
+  if (payload)
+    pkt->setPayload(payload);
   return pkt;
 }
 
@@ -617,7 +675,7 @@ void ConnectedPath::sendSimplePacket(uint8_t subprot, uint32_t destination, uint
     if (forward == false)
       sendUartPacket(subprot, destinationHandle, nullptr, 0);
   } else {
-    sendRadioPacket(cratePacket(subprot, 0, destination, destinationHandle), true, true);
+    sendRadioPacket(cratePacket(subprot, 0, destination, destinationHandle, nullptr), true, true);
   }
 }
 
