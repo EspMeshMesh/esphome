@@ -106,33 +106,6 @@ uint8_t ConnectedPath::sendRadioPacket(ConnectedPathPacket *pkt, bool forward, b
   return sendRawRadioPacket(pkt);
 }
 
-void ConnectedPath::sendDataTo(const uint8_t *data, uint16_t size, uint8_t connid) {
-  if (connid >= CONNPATH_MAX_CONNECTIONS || mConnectsions[connid].sourceAddr == CONNPATH_INVALID_ADDRESS) {
-    return;
-  }
-
-  ConnectedPathConnections *conn = mConnectsions + connid;
-  ConnectedPathPacket *pkt = new ConnectedPathPacket(nullptr, nullptr);
-  pkt->allocClearData(size);
-  pkt->getHeader()->subprotocol = CONNPATH_SEND_DATA;
-  pkt->setTarget(conn->sourceAddr, conn->sourceHandle);
-  pkt->setPayload(data);
-  sendRadioPacket(pkt, false, true);
-}
-
-void ConnectedPath::sendDataTo(const uint8_t *data, uint16_t size, uint32_t from, uint16_t handle) {
-  ConnectedPathConnections *conn = findConnection(from, handle);
-  if (conn != nullptr) {
-    ESP_LOGD(TAG, "ConnectedPath::sendDataTo size %d to %06lX:%04X", size, conn->sourceAddr, conn->sourceHandle);
-    ConnectedPathPacket *pkt = new ConnectedPathPacket(nullptr, nullptr);
-    pkt->allocClearData(size);
-    pkt->getHeader()->subprotocol = CONNPATH_SEND_DATA;
-    pkt->setTarget(conn->sourceAddr, conn->sourceHandle);
-    pkt->setPayload(data);
-    sendRadioPacket(pkt, false, true);
-  }
-}
-
 void ConnectedPath::sendRadioDataTo(const uint8_t *data, uint16_t size, uint8_t connid, bool forward) {
   if (connid >= CONNPATH_MAX_CONNECTIONS || mConnectsions[connid].sourceAddr == CONNPATH_INVALID_ADDRESS) {
     return;
@@ -587,6 +560,14 @@ uint8_t ConnectedPath::findConnection(uint32_t source, uint16_t sourceHandle, bo
   return CONNPATH_MAX_CONNECTIONS;
 }
 
+/**
+ * @brief Find an active connection by node address and  the connection handle.
+ * @param from - The address of the source of the packet.
+ * @param handle - The handle of the source of the packet.
+ * @param forward - Returned value. If is true the packet is travelling from source to destination. If false the packet
+ * is travelling from destination to source.
+ * @return The index of the connection in the mConnectsions array or CONNPATH_MAX_CONNECTIONS if not found.
+ */
 uint8_t ConnectedPath::findConnectionIndex(uint32_t from, uint16_t handle, bool *forward) {
   for (int i = 0; i < CONNPATH_MAX_CONNECTIONS; i++) {
     if (from == mConnectsions[i].sourceAddr && handle == mConnectsions[i].sourceHandle) {
