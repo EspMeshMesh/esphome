@@ -4,6 +4,7 @@
 
 #include "packetbuf.h"
 #include "recvdups.h"
+#include "memringbuffer.h"
 #include "esphome/core/component.h"
 
 #define CONNPATH_FLAG_REVERSEDIR 0x80
@@ -46,6 +47,13 @@ struct ConnectedPathConnections {
   void *arg;
 };
 
+struct ConnectedPathOutputBufferHeader {
+  uint32_t pkttime;
+  uint16_t forward : 1;
+  uint8_t connId : 7;
+  uint16_t dataSize;
+};
+
 constexpr uint32_t CONNPATH_COORDINATOR_ADDRESS = 0x00000000;
 
 class ConnectedPathPacket : public RadioPacket {
@@ -72,7 +80,7 @@ class MeshmeshComponent;
 class ConnectedPath {
  public:
   ConnectedPath(MeshmeshComponent *meshmesh, PacketBuf *packetbuf)
-      : mMeshMesh(meshmesh), mPacketBuf(packetbuf), mRecvDups() {
+      : mMeshMesh(meshmesh), mPacketBuf(packetbuf), mRecvDups(), mRadioOutputBuffer(256) {
     mPacketBuf->setConnectedPath(this);
   }
   void setup(void);
@@ -103,6 +111,7 @@ class ConnectedPath {
   void sendData(uint8_t *buffer, uint16_t size, uint32_t from);
   void invalidHandle(uint32_t from, uint16_t handle);
   void sendDataError(uint32_t from, uint16_t handle);
+  void processOutputBuffer();
 
  private:
   void connectionSetInvalid(uint8_t index) {
@@ -147,6 +156,7 @@ class ConnectedPath {
   bool mIsRadioBusy{false};
   ConnectedPathPacket *mRetransmitPacket = nullptr;
   std::list<ConnectedPathPacket *> mPendingPackets;
+  MemRingBuffer mRadioOutputBuffer;
 };
 
 }  // namespace meshmesh

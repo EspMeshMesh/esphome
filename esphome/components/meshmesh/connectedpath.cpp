@@ -51,12 +51,15 @@ void ConnectedPath::setup(void) {
 
 void ConnectedPath::loop() {
   mRecvDups.loop();
-  uint32_t now = millis();
+
   if (mRetransmitPacket != nullptr) {
-    ESP_LOGD(TAG, "ConnectedPath::loop retransmit packet");
     sendRawRadioPacket(mRetransmitPacket);
     mRetransmitPacket = nullptr;
+  } else if (mRadioOutputBuffer.filledSpace() > 0) {
+    processOutputBuffer();
   }
+
+  uint32_t now = millis();
   if (MeshmeshComponent::elapsedMillis(now, mConnectionsCheckTime) > 120000) {
     mConnectionsCheckTime = now;
     // debugConnection();
@@ -473,6 +476,50 @@ void ConnectedPath::sendDataError(uint32_t from, uint16_t handle) {
   if (CONN_IS_VALID(connid)) {
     sendSimplePacket(CONNPATH_SEND_DATA_ERROR, otherAddress, otherHandle, forward);
     connectionSetInvalid(connid);
+  }
+}
+
+void ConnectedPath::processOutputBuffer() {
+  if (!mRadioOutputBuffer.filledSpace())
+    return;
+
+  bool processing = true;
+  bool lastForward = false;
+  uint8_t lastConnId = CONNPATH_MAX_CONNECTIONS;
+  uint32_t lastPktTime = 0;
+  uint32_t now = millis();
+
+  uint8_t buffer[128];
+  uint16_t bufferSize = 0;
+
+  while (processing && mRadioOutputBuffer.filledSpace() > sizeof(ConnectedPathOutputBufferHeader)) {
+    processing = false;
+    ConnectedPathOutputBufferHeader header;
+    mRadioOutputBuffer.viewData((uint8_t *) &header, sizeof(ConnectedPathOutputBufferHeader));
+
+    if (MeshmeshComponent::elapsedMillis(now, header.pkttime) > 20 &&
+        (!(CONN_IS_VALID(lastConnId)) || ((header.connId == lastConnId) && (header.forward == lastForward)))) {
+      mRadioOutputBuffer.popData((uint8_t *) &header, sizeof(header));
+      mRadioOutputBuffer.popData(buffer + bufferSize, header.dataSize);
+      bufferSize += header.dataSize;
+      lastConnId = header.connId;
+      lastForward = header.forward;
+      lastPktTime = header.pkttime;
+      processing = true;
+    }
+  }
+
+  if (bufferSize > 0 && CONN_IS_VALID(lastConnId)) {
+    ConnectedPathConnections *conn = mConnectsions + lastConnId;
+    ConnectedPathPacket *pkt = new ConnectedPathPacket(nullptr, nullptr);
+    pkt->allocClearData(bufferSize);
+    pkt->getHeader()->subprotocol = CONNPATH_SEND_DATA;
+    pkt->setTarget(lastForward ? conn->destAddr : conn->sourceAddr,
+                   lastForward ? conn->destHandle : conn->sourceHandle);
+    pkt->setPayload(buffer);
+    sendRadioPacket(pkt, lastForward, true);
+    ESP_LOGD(TAG, "ConnectedPath::processOutputBuffer processed %d after %d", bufferSize,
+             MeshmeshComponent::elapsedMillis(now, lastPktTime));
   }
 }
 
