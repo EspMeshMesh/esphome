@@ -260,7 +260,7 @@ void ConnectedPath::radioPacketSentCb(void *arg, uint8_t status, RadioPacket *pk
 }
 
 void ConnectedPath::radioPacketSent(uint8_t status, RadioPacket *pkt) {
-  /*if (status) {
+  if (status) {
     // Handle transmission error onyl with packets with clean data
     ConnectedPathPacket *oldpkt = (ConnectedPathPacket *) pkt;
     ConnectedPathHeader_t *header = oldpkt->getHeader();
@@ -276,7 +276,7 @@ void ConnectedPath::radioPacketSent(uint8_t status, RadioPacket *pkt) {
         // FIXME: Signal error to packet creator
       }
     }
-  }*/
+  }
   // Free Radio for next packet
   mIsRadioBusy = false;
 }
