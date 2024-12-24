@@ -91,6 +91,7 @@ uint8_t ConnectedPath::sendRawRadioPacket(ConnectedPathPacket *pkt) {
     return res;
   } else {
     return PKT_SEND_ERR;
+    delete pkt;
   }
 }
 
@@ -167,7 +168,7 @@ uint8_t ConnectedPath::receiveUartPacket(uint8_t *data, uint16_t size) {
   if (size >= sizeof(ConnectedPathHeaderSt)) {
     ConnectedPathHeader_t *header = (ConnectedPathHeader_t *) data;
     uint8_t *payload = data + sizeof(ConnectedPathHeaderSt);
-    uint16_t payloadSize = size - sizeof(ConnectedPathHeaderSt);
+    uint16_t payloadSize = header->dataLength;
     // ESP_LOGD(TAG, "ConnectedPath::receiveUartPacket size %d subp %d", size, header->subprotocol);
 
     if (header->subprotocol == CONNPATH_OPEN_CONNECTION_REQ) {
@@ -195,32 +196,37 @@ uint8_t ConnectedPath::receiveUartPacket(uint8_t *data, uint16_t size) {
  * @brief Receive a ConnectedPath packet from the radio and handle it using the correct action.
  * @param buf - The packet data to be processed.
  * @param size - The size of the packet data. Must be greater than sizeof(ConnectedPathHeaderSt).
- * @param f - The source address of the packet.
- * @param r - The RSSI of the packet.
+ * @param source - The source address of the packet.
+ * @param rssi - The RSSI of the packet.
  */
-void ConnectedPath::receiveRadioPacket(uint8_t *buf, uint16_t size, uint32_t f, int16_t r) {
+void ConnectedPath::receiveRadioPacket(uint8_t *data, uint16_t size, uint32_t source, int16_t rssi) {
   if (size >= sizeof(ConnectedPathHeaderSt)) {
-    ConnectedPathHeader_t *header = (ConnectedPathHeader_t *) buf;
-    // ESP_LOGD(TAG, "ConnectedPath::receiveRadioPacket cmd %02X from %06X with seq %d data %d", header->subprotocol, f,
-    // header->seqno, header->dataLength);
-    if (mRecvDups.checkDuplicateTable(f, header->sourceHandle, header->seqno)) {
-      // ESP_LOGE(TAG, "ConnectedPath duplicated packet received from %06X:%02X with seq %d", f, header->nodeHandle,
-      // header->seqno);
+    ConnectedPathHeader_t *header = (ConnectedPathHeader_t *) data;
+    uint8_t *payload = data + sizeof(ConnectedPathHeader_t);
+    uint16_t payloadSize = header->dataLength;
+    ESP_LOGD(TAG, "ConnectedPath::receiveRadioPacket cmd %02X from %06X with seq %d data %d", header->subprotocol,
+             source, header->seqno, header->dataLength);
+    if (mRecvDups.checkDuplicateTable(source, header->sourceHandle, header->seqno)) {
+      ESP_LOGE(TAG, "ConnectedPath duplicated packet received from %06X:%02X with seq %d", source, header->sourceHandle,
+               header->seqno);
       return;
     }
 
     if (header->subprotocol == CONNPATH_OPEN_CONNECTION_REQ) {
-      openConnection(buf, size, f);
+      openConnection(data, size, source);
     } else if (header->subprotocol == CONNPATH_OPEN_CONNECTION_NACK) {
-      openConnectionNack(f, header->sourceHandle);
+      openConnectionNack(source, header->sourceHandle);
     } else if (header->subprotocol == CONNPATH_OPEN_CONNECTION_ACK) {
-      openConnectionAck(f, header->sourceHandle, buf, size);
+      openConnectionAck(source, header->sourceHandle, data, size);
     } else if (header->subprotocol == CONNPATH_SEND_DATA) {
-      sendData(buf, size, f);
+      if (sendData2(payload, payloadSize, source, header->sourceHandle) == RES_INVALID_HANDLE) {
+        sendSimplePacket(CONNPATH_INVALID_HANDLE, source, header->sourceHandle, false);
+      }
+      // sendData(data, size, source);
     } else if (header->subprotocol == CONNPATH_INVALID_HANDLE) {
-      invalidHandle(f, header->sourceHandle);
+      invalidHandle(source, header->sourceHandle);
     } else if (header->subprotocol == CONNPATH_SEND_DATA_ERROR) {
-      sendDataError(f, header->sourceHandle);
+      sendDataError(source, header->sourceHandle);
     }
   } else {
     ESP_LOGE(TAG, "ConnectedPath::recv invalid size %d but required at least %d", size, sizeof(ConnectedPathHeaderSt));
@@ -254,7 +260,7 @@ void ConnectedPath::radioPacketSentCb(void *arg, uint8_t status, RadioPacket *pk
 }
 
 void ConnectedPath::radioPacketSent(uint8_t status, RadioPacket *pkt) {
-  if (status) {
+  /*if (status) {
     // Handle transmission error onyl with packets with clean data
     ConnectedPathPacket *oldpkt = (ConnectedPathPacket *) pkt;
     ConnectedPathHeader_t *header = oldpkt->getHeader();
@@ -270,7 +276,7 @@ void ConnectedPath::radioPacketSent(uint8_t status, RadioPacket *pkt) {
         // FIXME: Signal error to packet creator
       }
     }
-  }
+  }*/
   // Free Radio for next packet
   mIsRadioBusy = false;
 }
@@ -435,7 +441,9 @@ void ConnectedPath::sendData(uint8_t *buffer, uint16_t size, uint32_t source) {
         ConnectedPathPacket *pkt = new ConnectedPathPacket(nullptr, nullptr);
         pkt->fromRawData(buffer, size);
         pkt->setTarget(otherAddress, otherHandle);
-        sendRadioPacket(pkt, forward, true);
+        if (sendRadioPacket(pkt, forward, true) == PKT_SEND_ERR) {
+          ESP_LOGE(TAG, "ConnectedPath::sendData failed to send packet");
+        }
       }
     } else {
       ESP_LOGE(TAG, "ConnectedPath::sendData invalid handle from %06lX:%04X", source, header->sourceHandle);
@@ -467,7 +475,7 @@ uint8_t ConnectedPath::sendData2(uint8_t *buffer, uint16_t size, uint32_t source
         sendUartPacket(CONNPATH_SEND_DATA, destHandle, buffer, size);
     } else {
       // ESP_LOGD(TAG, "ConnectedPath::sendData to %02X%02X%02X%02X", buffer[0], buffer[1], buffer[2], buffer[3]);
-      ConnectedPathPacket *pkt = cratePacket(CONNPATH_SEND_DATA, size, destAddress, destHandle, buffer);
+      // ConnectedPathPacket *pkt = cratePacket(CONNPATH_SEND_DATA, size, destAddress, destHandle, buffer);
       sendRadioDataTo(buffer, size, connidx, forward);
     }
   } else {
