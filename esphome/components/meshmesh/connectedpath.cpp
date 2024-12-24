@@ -517,45 +517,89 @@ void ConnectedPath::sendDataError(uint32_t from, uint16_t handle) {
   }
 }
 
+/**
+ * @brief Process the mRadioOutputBuffer buffer in order to merge packets that belong to the same connection in a single
+ * Radio packet.
+ */
 void ConnectedPath::processOutputBuffer() {
-  if (!mRadioOutputBuffer.filledSpace())
-    return;
+  // Maximum time to wait for a packet to be sent
+  const unsigned long timeout = 20;
+  // Check if is the header of a packet that can be sent
+  auto checkHeader = [](ConnectedPathOutputBufferHeader &header, uint8_t &connid, bool &forward, uint32_t now) -> bool {
+    if (MeshmeshComponent::elapsedMillis(now, header.pkttime) > timeout &&
+        (!(CONN_IS_VALID(connid)) || ((header.connId == connid) && (header.forward == forward)))) {
+      return true;
+    }
+    return false;
+  };
 
-  bool processing = true;
+  ConnectedPathOutputBufferHeader header;
+
+  uint32_t now = millis();
+  uint8_t *buffer = nullptr;
+  uint16_t bufferTotalSize = 0;
+
   bool lastForward = false;
   uint8_t lastConnId = CONNPATH_MAX_CONNECTIONS;
   uint32_t lastPktTime = 0;
-  uint32_t now = millis();
+  uint16_t offset = 0;
+  bool processing = true;
 
-  uint8_t buffer[128];
-  uint16_t bufferSize = 0;
-
-  while (processing && mRadioOutputBuffer.filledSpace() > sizeof(ConnectedPathOutputBufferHeader)) {
+  // First pass to get the total size of the buffer
+  while (processing) {
     processing = false;
-    ConnectedPathOutputBufferHeader header;
-    mRadioOutputBuffer.viewData((uint8_t *) &header, sizeof(ConnectedPathOutputBufferHeader));
-
-    if (MeshmeshComponent::elapsedMillis(now, header.pkttime) > 20 &&
-        (!(CONN_IS_VALID(lastConnId)) || ((header.connId == lastConnId) && (header.forward == lastForward)))) {
-      mRadioOutputBuffer.popData((uint8_t *) &header, sizeof(header));
-      mRadioOutputBuffer.popData(buffer + bufferSize, header.dataSize);
-      bufferSize += header.dataSize;
-      lastConnId = header.connId;
-      lastForward = header.forward;
-      lastPktTime = header.pkttime;
-      processing = true;
+    uint16_t readed = mRadioOutputBuffer.viewData2((uint8_t *) &header, sizeof(header), offset);
+    if (readed == sizeof(ConnectedPathOutputBufferHeader)) {
+      if (checkHeader(header, lastConnId, lastForward, now)) {
+        bufferTotalSize += header.dataSize;
+        offset += sizeof(ConnectedPathOutputBufferHeader) + header.dataSize;
+        processing = true;
+      }
     }
   }
 
-  if (bufferSize > 0 && CONN_IS_VALID(lastConnId)) {
+  if (bufferTotalSize == 0) {
+    return;
+  }
+
+  // Allocate the buffer
+  buffer = new uint8_t[bufferTotalSize];
+
+  lastForward = false;
+  lastConnId = CONNPATH_MAX_CONNECTIONS;
+  lastPktTime = 0;
+  processing = true;
+  uint16_t bufferPos = 0;
+
+  // Second pass to fill the buffer with the data
+  while (processing) {
+    processing = false;
+    uint16_t readed = mRadioOutputBuffer.viewData((uint8_t *) &header, sizeof(header));
+    if (readed == sizeof(ConnectedPathOutputBufferHeader)) {
+      if (checkHeader(header, lastConnId, lastForward, now)) {
+        mRadioOutputBuffer.popData((uint8_t *) &header, sizeof(header));
+        mRadioOutputBuffer.popData(buffer + bufferPos, header.dataSize);
+        bufferPos += header.dataSize;
+        lastConnId = header.connId;
+        lastForward = header.forward;
+        lastPktTime = header.pkttime;
+        processing = true;
+      }
+    }
+  }
+
+  if (bufferTotalSize > 0 && CONN_IS_VALID(lastConnId)) {
     ConnectedPathConnections *conn = mConnectsions + lastConnId;
     ConnectedPathPacket *pkt =
-        cratePacket(CONNPATH_SEND_DATA, bufferSize, lastForward ? conn->destAddr : conn->sourceAddr,
+        cratePacket(CONNPATH_SEND_DATA, bufferTotalSize, lastForward ? conn->destAddr : conn->sourceAddr,
                     lastForward ? conn->destHandle : conn->sourceHandle, buffer);
-    ESP_LOGD(TAG, "ConnectedPath::processOutputBuffer processed size %d after %dms", bufferSize,
+    ESP_LOGD(TAG, "ConnectedPath::processOutputBuffer processed size %d after %dms", bufferTotalSize,
              MeshmeshComponent::elapsedMillis(now, lastPktTime));
     sendRadioPacket(pkt, false, true);
   }
+
+  // Free the buffer
+  delete[] buffer;
 }
 
 const ConnectedPathConnections *ConnectedPath::findConnection(uint32_t from, uint16_t handle) const {
@@ -611,8 +655,8 @@ uint8_t ConnectedPath::findConnection(uint32_t source, uint16_t sourceHandle, bo
  * @brief Find an active connection by node address and  the connection handle.
  * @param from - The address of the source of the packet.
  * @param handle - The handle of the source of the packet.
- * @param forward - Returned value. If is true the packet is travelling from source to destination. If false the packet
- * is travelling from destination to source.
+ * @param forward - Returned value. If is true the packet is travelling from source to destination. If false the
+ * packet is travelling from destination to source.
  * @return The index of the connection in the mConnectsions array or CONNPATH_MAX_CONNECTIONS if not found.
  */
 uint8_t ConnectedPath::findConnectionIndex(uint32_t from, uint16_t handle, bool *forward) {

@@ -16,6 +16,7 @@ class MemRingBuffer {
   uint16_t popData(uint8_t *data, uint16_t size);
   uint8_t popByte();
   uint16_t viewData(uint8_t *data, uint16_t size) const;
+  uint16_t viewData2(uint8_t *data, uint16_t size, uint16_t offset) const;
   void resize(uint16_t size);
 
  public:
@@ -37,12 +38,21 @@ class MemRingBuffer {
     else
       return (uint16_t) (mHead - mTail);
   }
+
   uint16_t continousFilledSpace() const {
     uint8_t *endofbuff = mBuffer + mAllocatedSize;
     if (mHead <= mTail)
       return (uint16_t) (mTail - mHead);
     else
       return (uint16_t) (endofbuff - mHead);
+  }
+
+  uint16_t continousFilledSpace2(uint8_t *head, uint8_t *tail) const {
+    uint8_t *endofbuff = mBuffer + mAllocatedSize;
+    if (head <= tail)
+      return (uint16_t) (tail - head);
+    else
+      return (uint16_t) (endofbuff - head);
   }
 
  private:
