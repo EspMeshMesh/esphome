@@ -37,6 +37,8 @@ struct ConnectedPathBindedPortSt {
 typedef ConnectedPathBindedPortSt ConnectedPathBindedPort_t;
 
 struct ConnectedPathConnections {
+  uint8_t isInvalid : 1;
+  uint8_t isOperative : 1;
   uint16_t sourceHandle;
   uint16_t destHandle;
   uint32_t sourceAddr;
@@ -51,7 +53,8 @@ struct ConnectedPathOutputBufferHeader {
   uint32_t pkttime;
   uint16_t forward : 1;
   uint8_t connId : 7;
-  uint16_t dataSize;
+  uint16_t subProtocol : 4;
+  uint16_t dataSize : 12;
 };
 
 constexpr uint32_t CONNPATH_COORDINATOR_ADDRESS = 0x00000000;
@@ -87,9 +90,10 @@ class ConnectedPath {
   void loop();
   uint8_t sendRawRadioPacket(ConnectedPathPacket *pkt);
   uint8_t sendRadioPacket(ConnectedPathPacket *pkt, bool forward, bool initHeader);
-  void sendRadioDataTo(const uint8_t *data, uint16_t size, uint8_t connid, bool forward);
-  void sendRadioDataTo(const uint8_t *data, uint16_t size, uint32_t from, uint16_t handle);
-  void closeConnection_(ConnectedPathConnections *conn);
+  void enqueueRadioPacket(uint8_t subprot, uint8_t connid, bool forward, uint16_t datasize, uint8_t *data);
+  void enqueueRadioDataTo(const uint8_t *data, uint16_t size, uint8_t connid, bool forward);
+  void enqueueRadioDataTo(const uint8_t *data, uint16_t size, uint32_t from, uint16_t handle);
+  void closeConnection_(uint8_t connid);
   void closeConnection(uint32_t from, uint16_t handle);
   void closeAllConnections();
   uint8_t receiveUartPacket(uint8_t *data, uint16_t size);
@@ -104,7 +108,7 @@ class ConnectedPath {
   void radioPacketSent(uint8_t status, RadioPacket *pkt);
   void radioPacketError(uint32_t address, uint16_t handle, uint8_t subprot);
   void openConnection(uint8_t *buffer, uint16_t size, uint32_t from);
-  void openConnectionForMe(ConnectedPathConnections *conn, uint16_t port);
+  void openConnectionForMe(uint8_t connid, uint16_t port);
   void openConnectionNack(uint32_t from, uint16_t handle);
   void openConnectionAck(uint32_t from, uint16_t handle, uint8_t *buffer, uint16_t size);
   void disconnect(uint8_t *buffer, uint16_t size, uint32_t from);
@@ -115,21 +119,23 @@ class ConnectedPath {
   void processOutputBuffer();
 
  private:
-  void connectionSetInvalid(uint8_t index) {
-    if (index < CONNPATH_MAX_CONNECTIONS)
-      connectionSetInvalid(mConnectsions + index);
+  void connectionSetInvalid(uint8_t i) {
+    if (i < CONNPATH_MAX_CONNECTIONS) {
+      auto conn = mConnectsions + i;
+      memset((void *) conn, 0, sizeof(ConnectedPathConnections));
+      conn->isInvalid = true;
+    }
   }
-  void connectionSetInvalid(ConnectedPathConnections *conn) {
-    conn->sourceAddr = CONNPATH_INVALID_ADDRESS;
-    conn->destAddr = CONNPATH_INVALID_ADDRESS;
-    conn->receive = nullptr;
-    conn->disconnect = nullptr;
-    conn->arg = nullptr;
+  void connectionSetInoperative(uint8_t index) {
+    if (index < CONNPATH_MAX_CONNECTIONS && mConnectsions[index].isOperative) {
+      mConnectsions[index].isOperative = false;
+      mConnectionInoperativeCount++;
+    }
   }
   uint8_t connectionGetFirstInvalid() {
     uint8_t i;
     for (i = 0; i < CONNPATH_MAX_CONNECTIONS; i++)
-      if (mConnectsions[i].sourceAddr == CONNPATH_INVALID_ADDRESS)
+      if (mConnectsions[i].isInvalid)
         break;
     return i;
   }
@@ -154,6 +160,7 @@ class ConnectedPath {
   uint16_t mLastSequenceNum = 0;
   RecvDups mRecvDups;
   ConnectedPathConnections mConnectsions[CONNPATH_MAX_CONNECTIONS];
+  uint8_t mConnectionInoperativeCount = 0;
   uint32_t mConnectionsCheckTime = 0;
   std::list<ConnectedPathBindedPort_t> mBindedPorts;
   uint16_t mNextHandle = 1;

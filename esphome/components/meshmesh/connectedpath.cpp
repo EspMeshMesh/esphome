@@ -11,6 +11,8 @@
 #define RES_ERROR 1
 #define RES_INVALID_HANDLE 2
 #define FORWARD2TXT(X) (X ? "-->" : "<--")
+#define FORWARD true
+#define REVERSE false
 
 namespace esphome {
 namespace meshmesh {
@@ -19,6 +21,7 @@ static const char *TAG = "meshmesh.ConnectedPath";
 
 #define CONNPATH_MAX_RETRANSMISSIONS 0x04
 
+#define CONNPATH_INVALID_REQ 0x00
 #define CONNPATH_OPEN_CONNECTION_REQ 0x01
 #define CONNPATH_OPEN_CONNECTION_REP 0x02
 #define CONNPATH_DISCONNECT_ACK 0x03
@@ -30,7 +33,7 @@ static const char *TAG = "meshmesh.ConnectedPath";
 #define CONNPATH_SEND_DATA_ERROR 0x09
 #define CONNPATH_CLEAR_CONNECTIONS 0x0A
 
-#define CONN_IS_VALID(X) X < CONNPATH_MAX_CONNECTIONS
+#define CONN_EXISTS(X) (X < CONNPATH_MAX_CONNECTIONS)
 
 void ConnectedPathPacket::allocClearData(uint16_t size) {
   RadioPacket::allocClearData(size + sizeof(ConnectedPathHeaderSt));
@@ -64,15 +67,22 @@ void ConnectedPath::loop() {
     processOutputBuffer();
   }
 
+  if (mConnectionInoperativeCount > 0 && mRadioOutputBuffer.filledSpace() == 0) {
+    for (int i = 0; i < CONNPATH_MAX_CONNECTIONS; i++) {
+      if (!mConnectsions[i].isInvalid && !mConnectsions[i].isOperative) {
+        ESP_LOGD(TAG, "ConnectedPath::loop invalidate inoperative connection %d", i);
+        connectionSetInvalid(i);
+        mConnectionInoperativeCount--;
+      }
+    }
+  }
+
   uint32_t now = millis();
   if (MeshmeshComponent::elapsedMillis(now, mConnectionsCheckTime) > 120000) {
     mConnectionsCheckTime = now;
-    // debugConnection();
     for (int i = 0; i < CONNPATH_MAX_CONNECTIONS; i++) {
-      if (mConnectsions[i].sourceAddr != CONNPATH_INVALID_ADDRESS &&
-          MeshmeshComponent::elapsedMillis(now, mConnectsions[i].lastTime) > 300000) {
-        closeConnection_(mConnectsions + i);
-        connectionSetInvalid(i);
+      if (!mConnectsions[i].isOperative && MeshmeshComponent::elapsedMillis(now, mConnectsions[i].lastTime) > 300000) {
+        closeConnection_(i);
       }
     }
   }
@@ -112,8 +122,9 @@ uint8_t ConnectedPath::sendRadioPacket(ConnectedPathPacket *pkt, bool forward, b
   return sendRawRadioPacket(pkt);
 }
 
-void ConnectedPath::sendRadioDataTo(const uint8_t *data, uint16_t size, uint8_t connid, bool forward) {
-  if (connid >= CONNPATH_MAX_CONNECTIONS || mConnectsions[connid].sourceAddr == CONNPATH_INVALID_ADDRESS) {
+void ConnectedPath::enqueueRadioPacket(uint8_t subprot, uint8_t connid, bool forward, uint16_t datasize,
+                                       uint8_t *data) {
+  if (!CONN_EXISTS(connid) || !mConnectsions[connid].isOperative) {
     return;
   }
 
@@ -121,38 +132,59 @@ void ConnectedPath::sendRadioDataTo(const uint8_t *data, uint16_t size, uint8_t 
   header.pkttime = millis();
   header.connId = connid;
   header.forward = forward ? 1 : 0;
+  header.subProtocol = subprot;
+  header.dataSize = datasize;
+  mRadioOutputBuffer.pushData((uint8_t *) &header, sizeof(header));
+  if (datasize > 0)
+    mRadioOutputBuffer.pushData(data, datasize);
+
+  ESP_LOGD(TAG, "ConnectedPath::enqueueRadioPacket prot %d connid %d size %d from %06X:%04X %s to %06X:%04X", subprot,
+           connid, datasize, mConnectsions[connid].sourceAddr, mConnectsions[connid].sourceHandle, FORWARD2TXT(forward),
+           mConnectsions[connid].destAddr, mConnectsions[connid].destHandle);
+}
+
+void ConnectedPath::enqueueRadioDataTo(const uint8_t *data, uint16_t size, uint8_t connid, bool forward) {
+  if (!CONN_EXISTS(connid) || !mConnectsions[connid].isOperative) {
+    return;
+  }
+
+  ConnectedPathOutputBufferHeader header;
+  header.pkttime = millis();
+  header.connId = connid;
+  header.forward = forward ? 1 : 0;
+  header.subProtocol = CONNPATH_SEND_DATA;
   header.dataSize = size;
   mRadioOutputBuffer.pushData((uint8_t *) &header, sizeof(header));
   mRadioOutputBuffer.pushData(data, size);
 
-  ESP_LOGD(TAG, "ConnectedPath::sendRadioDataTo connid %d size %d from %06X:%04X %s to %06X:%04X", connid, size,
+  ESP_LOGD(TAG, "ConnectedPath::enqueueRadioDataTo connid %d size %d from %06X:%04X %s to %06X:%04X", connid, size,
            mConnectsions[connid].sourceAddr, mConnectsions[connid].sourceHandle, FORWARD2TXT(forward),
            mConnectsions[connid].destAddr, mConnectsions[connid].destHandle);
 }
 
-void ConnectedPath::sendRadioDataTo(const uint8_t *data, uint16_t size, uint32_t from, uint16_t handle) {
+void ConnectedPath::enqueueRadioDataTo(const uint8_t *data, uint16_t size, uint32_t from, uint16_t handle) {
   bool forward;
   uint8_t connid = findConnectionIndex(from, handle, &forward);
   if (connid < CONNPATH_MAX_CONNECTIONS)
-    sendRadioDataTo(data, size, connid, forward);
+    enqueueRadioDataTo(data, size, connid, forward);
 }
 
-void ConnectedPath::closeConnection_(ConnectedPathConnections *conn) {
-  sendSimplePacket(CONNPATH_DISCONNECT_REQ, conn->sourceAddr, conn->sourceHandle, false);
-  sendSimplePacket(CONNPATH_DISCONNECT_REQ, conn->destAddr, conn->destHandle, true);
-  connectionSetInvalid(conn);
+void ConnectedPath::closeConnection_(uint8_t connid) {
+  enqueueRadioPacket(CONNPATH_DISCONNECT_REQ, connid, false, 0, nullptr);
+  enqueueRadioPacket(CONNPATH_DISCONNECT_REQ, connid, true, 0, nullptr);
+  connectionSetInoperative(connid);
 }
 
 void ConnectedPath::closeConnection(uint32_t from, uint16_t handle) {
-  ConnectedPathConnections *conn = findConnection(from, handle);
-  if (conn != nullptr)
-    closeConnection_(conn);
+  uint8_t connid = findConnectionIndex(from, handle, nullptr);
+  if (connid < CONNPATH_MAX_CONNECTIONS)
+    closeConnection_(connid);
 }
 
 void ConnectedPath::closeAllConnections() {
   for (int i = 0; i < CONNPATH_MAX_CONNECTIONS; i++) {
     if (mConnectsions[i].sourceAddr != CONNPATH_INVALID_ADDRESS) {
-      closeConnection_(mConnectsions + i);
+      closeConnection_(i);
     }
   }
 }
@@ -175,7 +207,7 @@ uint8_t ConnectedPath::receiveUartPacket(uint8_t *data, uint16_t size) {
       openConnection(data, size, 0);
     } else if (header->subprotocol == CONNPATH_SEND_DATA) {
       if (sendData2(payload, payloadSize, 0, header->sourceHandle) == RES_INVALID_HANDLE) {
-        sendSimplePacket(CONNPATH_INVALID_HANDLE, 0, header->sourceHandle, false);
+        sendUartPacket(CONNPATH_INVALID_HANDLE, header->sourceHandle, nullptr, 0);
       }
     } else if (header->subprotocol == CONNPATH_DISCONNECT_REQ) {
       disconnect(data, size, 0);
@@ -220,7 +252,8 @@ void ConnectedPath::receiveRadioPacket(uint8_t *data, uint16_t size, uint32_t so
       openConnectionAck(source, header->sourceHandle, data, size);
     } else if (header->subprotocol == CONNPATH_SEND_DATA) {
       if (sendData2(payload, payloadSize, source, header->sourceHandle) == RES_INVALID_HANDLE) {
-        sendSimplePacket(CONNPATH_INVALID_HANDLE, source, header->sourceHandle, false);
+        // FIXME
+        sendRadioPacket(cratePacket(CONNPATH_INVALID_HANDLE, 0, source, header->sourceHandle, nullptr), true, true);
       }
       // sendData(data, size, source);
     } else if (header->subprotocol == CONNPATH_INVALID_HANDLE) {
@@ -287,7 +320,7 @@ void ConnectedPath::radioPacketError(uint32_t address, uint16_t handle, uint8_t 
   uint32_t otherAddress;
   uint16_t otherHandle;
   connid = findConnection(address, handle, forward, otherAddress, otherHandle);
-  if (CONN_IS_VALID(connid)) {
+  if (CONN_EXISTS(connid)) {
     if (subprot == CONNPATH_OPEN_CONNECTION_REQ) {
       sendSimplePacket(CONNPATH_OPEN_CONNECTION_NACK, otherAddress, otherHandle, forward);
     } else if (subprot == CONNPATH_SEND_DATA) {
@@ -311,9 +344,11 @@ void ConnectedPath::openConnection(uint8_t *buffer, uint16_t size, uint32_t sour
     if (size >= sizeof(ConnectedPathHeaderSt) + pathLen * sizeof(uint32_t) + 3) {
       uint8_t connid = connectionGetFirstInvalid();
 
-      if (CONN_IS_VALID(connid)) {
+      if (CONN_EXISTS(connid)) {
         ConnectedPathConnections *conn = mConnectsions + connid;
         uint32_t nextAddress = pathLen > 0 ? uint32FromBuffer(buf + 3) : 0;
+        conn->isInvalid = false;
+        conn->isOperative = true;
         conn->sourceAddr = source;
         conn->sourceHandle = header->sourceHandle;
         conn->lastTime = millis();
@@ -322,21 +357,17 @@ void ConnectedPath::openConnection(uint8_t *buffer, uint16_t size, uint32_t sour
           uint8_t newPathLen = pathLen - 1;
           conn->destAddr = nextAddress;
           conn->destHandle = mNextHandle++;
-
           // Forrward OPEN_CONNECTION request
           ESP_LOGD(TAG, "ConnectedPath::openConnection req %06lX:%04X[%02X]", conn->destAddr, conn->destHandle, connid);
-          ConnectedPathPacket *pkt = new ConnectedPathPacket(nullptr, nullptr);
-          pkt->allocClearData(newPathLen * sizeof(uint32_t) + 3);
-          pkt->getHeader()->subprotocol = CONNPATH_OPEN_CONNECTION_REQ;
-          uint8_t *payload = pkt->getPayload();
-          uint16toBuffer(payload, port);
-          payload[2] = newPathLen;
+          uint16_t datasize = newPathLen * sizeof(uint32_t) + 3;
+          uint8_t *data = new uint8_t[datasize];
+          uint16toBuffer(data, port);
+          data[2] = newPathLen;
           if (newPathLen)
-            os_memcpy(payload + 3, buf + 7, newPathLen * sizeof(uint32_t));
-          pkt->setTarget(conn->destAddr, conn->destHandle);
-          sendRadioPacket(pkt, true, true);
+            os_memcpy(data + 3, buf + 7, newPathLen * sizeof(uint32_t));
+          enqueueRadioPacket(CONNPATH_OPEN_CONNECTION_REQ, connid, FORWARD, datasize, data);
         } else {
-          openConnectionForMe(conn, port);
+          openConnectionForMe(connid, port);
         }
       } else {
         ESP_LOGE(TAG, "ConnectedPath::openConnectionNack not enough connections for %06lX:%04X", source,
@@ -346,17 +377,13 @@ void ConnectedPath::openConnection(uint8_t *buffer, uint16_t size, uint32_t sour
   }
 }
 
-void ConnectedPath::openConnectionForMe(ConnectedPathConnections *conn, uint16_t port) {
+void ConnectedPath::openConnectionForMe(uint8_t connid, uint16_t port) {
+  ConnectedPathConnections *conn = mConnectsions + connid;
   conn->destAddr = 0;
   conn->destHandle = 0;
-
-  // Forrward connectnio request
-  ConnectedPathPacket *pkt = new ConnectedPathPacket(nullptr, nullptr);
-  pkt->allocClearData(0);
-  pkt->getHeader()->subprotocol = CONNPATH_OPEN_CONNECTION_ACK;
-  pkt->setTarget(conn->sourceAddr, conn->sourceHandle);
-  sendRadioPacket(pkt, false, true);
-
+  // Forward connection request is accepted
+  enqueueRadioPacket(CONNPATH_OPEN_CONNECTION_ACK, connid, false, 0, nullptr);
+  // Call the handler to receive data for this port
   for (ConnectedPathBindedPort_t bp : mBindedPorts) {
     if (bp.port == port)
       bp.handler(bp.arg, conn->destAddr, conn->destHandle);
@@ -370,7 +397,7 @@ void ConnectedPath::openConnectionNack(uint32_t from, uint16_t handle) {
   int8_t connid = findConnection(from, handle, forward, otherAddress, otherHandle);
   ESP_LOGD(TAG, "ConnectedPath::openConnectionNack from %06lX:%04X connid %d forward %d addr:%06lX", from, handle,
            connid, forward, otherAddress);
-  if (CONN_IS_VALID(connid)) {
+  if (CONN_EXISTS(connid)) {
     sendSimplePacket(CONNPATH_OPEN_CONNECTION_NACK, otherAddress, otherHandle, forward);
     connectionSetInvalid(connid);
   } else {
@@ -384,7 +411,7 @@ void ConnectedPath::openConnectionAck(uint32_t from, uint16_t handle, uint8_t *b
   uint16_t otherHandle;
   int8_t connid = findConnection(from, handle, forward, otherAddress, otherHandle);
   ESP_LOGD(TAG, "ConnectedPath::openConnectionAck from %06lX:%04X[%02X] size %d", from, handle, connid, size);
-  if (CONN_IS_VALID(connid)) {
+  if (CONN_EXISTS(connid)) {
     mConnectsions[connid].lastTime = millis();
     sendSimplePacket(CONNPATH_OPEN_CONNECTION_ACK, otherAddress, otherHandle, forward);
   } else {
@@ -401,7 +428,7 @@ void ConnectedPath::disconnect(uint8_t *buffer, uint16_t size, uint32_t from) {
     uint32_t otherAddress;
     uint16_t otherHandle;
     int8_t connid = findConnection(from, header->sourceHandle, forward, otherAddress, otherHandle);
-    if (CONN_IS_VALID(connid)) {
+    if (CONN_EXISTS(connid)) {
       ConnectedPathConnections *conn = mConnectsions + connid;
       sendSimplePacket(CONNPATH_DISCONNECT_REQ, otherAddress, otherHandle, forward);
       if (forward && mConnectsions[connid].destAddr == 0)
@@ -425,7 +452,7 @@ void ConnectedPath::sendData(uint8_t *buffer, uint16_t size, uint32_t source) {
     uint32_t otherAddress;
     uint16_t otherHandle;
     int8_t connid = findConnection(source, header->sourceHandle, forward, otherAddress, otherHandle);
-    if (CONN_IS_VALID(connid)) {
+    if (CONN_EXISTS(connid)) {
       mConnectsions[connid].lastTime = millis();
       // From source to target
       ConnectedPathConnections *conn = mConnectsions + connid;
@@ -457,7 +484,7 @@ uint8_t ConnectedPath::sendData2(uint8_t *buffer, uint16_t size, uint32_t source
   bool forward;
   int8_t connidx = findConnectionIndex(source, handle, &forward);
 
-  if (CONN_IS_VALID(connidx)) {
+  if (CONN_EXISTS(connidx)) {
     mConnectsions[connidx].lastTime = millis();
 
     uint32_t destAddress;
@@ -476,7 +503,7 @@ uint8_t ConnectedPath::sendData2(uint8_t *buffer, uint16_t size, uint32_t source
     } else {
       // ESP_LOGD(TAG, "ConnectedPath::sendData to %02X%02X%02X%02X", buffer[0], buffer[1], buffer[2], buffer[3]);
       // ConnectedPathPacket *pkt = cratePacket(CONNPATH_SEND_DATA, size, destAddress, destHandle, buffer);
-      sendRadioDataTo(buffer, size, connidx, forward);
+      enqueueRadioDataTo(buffer, size, connidx, forward);
     }
   } else {
     ESP_LOGE(TAG, "ConnectedPath::sendData2 request invalid handle from %06lX:%04X", source, handle);
@@ -486,8 +513,8 @@ uint8_t ConnectedPath::sendData2(uint8_t *buffer, uint16_t size, uint32_t source
 }
 
 /**
- * @brief If an invalid handle is received from a radio packet, invalidate the connection if it exists and propagate the
- * invalid handle to the next node in the path.
+ * @brief If an invalid handle is received from a radio packet, invalidate the connection if it exists and propagate
+ * the invalid handle to the next node in the path.
  * @param source - The address of the source of the packet.
  * @param sourceHandle - The handle of the source of the packet.
  */
@@ -498,7 +525,7 @@ void ConnectedPath::invalidHandle(uint32_t source, uint16_t sourceHandle) {
   int8_t connid = findConnection(source, sourceHandle, forward, destination, destinationHandle);
   ESP_LOGD(TAG, "ConnectedPath::invalidHandle connid %d source %06lX:%04X destination %06lX:%04X %s", connid, source,
            sourceHandle, destination, destinationHandle, forward ? "-->" : "<--");
-  if (CONN_IS_VALID(connid)) {
+  if (CONN_EXISTS(connid)) {
     sendSimplePacket(CONNPATH_INVALID_HANDLE, destination, destinationHandle, forward);
     connectionSetInvalid(connid);
   }
@@ -511,26 +538,38 @@ void ConnectedPath::sendDataError(uint32_t from, uint16_t handle) {
   int8_t connid = findConnection(from, handle, forward, otherAddress, otherHandle);
   ESP_LOGD(TAG, "ConnectedPath::sendDataError from %06lX:%04X connid %d. %d %06lX", from, handle, connid, forward,
            otherAddress);
-  if (CONN_IS_VALID(connid)) {
+  if (CONN_EXISTS(connid)) {
     sendSimplePacket(CONNPATH_SEND_DATA_ERROR, otherAddress, otherHandle, forward);
     connectionSetInvalid(connid);
   }
 }
 
 /**
- * @brief Process the mRadioOutputBuffer buffer in order to merge packets that belong to the same connection in a single
- * Radio packet.
+ * @brief Process the mRadioOutputBuffer buffer in order to merge packets that belong to the same connection in a
+ * single Radio packet.
  */
 void ConnectedPath::processOutputBuffer() {
   // Maximum time to wait for a packet to be sent
   const unsigned long timeout = 20;
   // Check if is the header of a packet that can be sent
-  auto checkHeader = [](ConnectedPathOutputBufferHeader &header, uint8_t &connid, bool &forward, uint32_t now) -> bool {
-    if (MeshmeshComponent::elapsedMillis(now, header.pkttime) > timeout &&
-        (!(CONN_IS_VALID(connid)) || ((header.connId == connid) && (header.forward == forward)))) {
+  auto checkHeader = [](ConnectedPathOutputBufferHeader &header, ConnectedPathOutputBufferHeader &lastHeader,
+                        uint32_t now, bool isfirst) -> bool {
+    if ((!isfirst || MeshmeshComponent::elapsedMillis(now, header.pkttime) > timeout) &&
+        (!(CONN_EXISTS(lastHeader.connId)) ||
+         ((header.connId == lastHeader.connId) && (header.forward == lastHeader.forward) &&
+          (header.subProtocol == lastHeader.subProtocol)))) {
       return true;
     }
     return false;
+  };
+
+  auto setheader = [](ConnectedPathOutputBufferHeader &header, uint8_t connid, bool forward, uint8_t subProtocol,
+                      uint32_t pkttime, uint16_t dataSize) {
+    header.connId = connid;
+    header.forward = forward;
+    header.subProtocol = subProtocol;
+    header.pkttime = pkttime;
+    header.dataSize = dataSize;
   };
 
   ConnectedPathOutputBufferHeader header;
@@ -539,36 +578,35 @@ void ConnectedPath::processOutputBuffer() {
   uint8_t *buffer = nullptr;
   uint16_t bufferTotalSize = 0;
 
-  bool lastForward = false;
-  uint8_t lastConnId = CONNPATH_MAX_CONNECTIONS;
-  uint32_t lastPktTime = 0;
+  ConnectedPathOutputBufferHeader lastHeader;
+  setheader(lastHeader, CONNPATH_MAX_CONNECTIONS, false, CONNPATH_INVALID_REQ, 0, 0);
   uint16_t offset = 0;
   bool processing = true;
+  bool isfirst = true;
 
   // First pass to get the total size of the buffer
   while (processing) {
     processing = false;
     uint16_t readed = mRadioOutputBuffer.viewData2((uint8_t *) &header, sizeof(header), offset);
     if (readed == sizeof(ConnectedPathOutputBufferHeader)) {
-      if (checkHeader(header, lastConnId, lastForward, now)) {
+      if (checkHeader(header, lastHeader, now, isfirst)) {
         bufferTotalSize += header.dataSize;
+        setheader(lastHeader, header.connId, header.forward, header.subProtocol, header.pkttime, header.dataSize);
         offset += sizeof(ConnectedPathOutputBufferHeader) + header.dataSize;
         processing = true;
+        isfirst = false;
       }
     }
   }
 
-  if (bufferTotalSize == 0) {
-    return;
+  if (bufferTotalSize > 0) {
+    // Allocate the buffer
+    buffer = new uint8_t[bufferTotalSize];
   }
 
-  // Allocate the buffer
-  buffer = new uint8_t[bufferTotalSize];
-
-  lastForward = false;
-  lastConnId = CONNPATH_MAX_CONNECTIONS;
-  lastPktTime = 0;
+  setheader(lastHeader, CONNPATH_MAX_CONNECTIONS, false, CONNPATH_INVALID_REQ, 0, 0);
   processing = true;
+  isfirst = true;
   uint16_t bufferPos = 0;
 
   // Second pass to fill the buffer with the data
@@ -576,25 +614,26 @@ void ConnectedPath::processOutputBuffer() {
     processing = false;
     uint16_t readed = mRadioOutputBuffer.viewData((uint8_t *) &header, sizeof(header));
     if (readed == sizeof(ConnectedPathOutputBufferHeader)) {
-      if (checkHeader(header, lastConnId, lastForward, now)) {
+      if (checkHeader(header, lastHeader, now, isfirst)) {
         mRadioOutputBuffer.popData((uint8_t *) &header, sizeof(header));
-        mRadioOutputBuffer.popData(buffer + bufferPos, header.dataSize);
-        bufferPos += header.dataSize;
-        lastConnId = header.connId;
-        lastForward = header.forward;
-        lastPktTime = header.pkttime;
+        if (header.dataSize > 0) {
+          mRadioOutputBuffer.popData(buffer + bufferPos, header.dataSize);
+          bufferPos += header.dataSize;
+        }
+        setheader(lastHeader, header.connId, header.forward, header.subProtocol, header.pkttime, header.dataSize);
         processing = true;
+        isfirst = false;
       }
     }
   }
 
-  if (bufferTotalSize > 0 && CONN_IS_VALID(lastConnId)) {
-    ConnectedPathConnections *conn = mConnectsions + lastConnId;
+  if (CONN_EXISTS(lastHeader.connId)) {
+    ConnectedPathConnections *conn = mConnectsions + lastHeader.connId;
     ConnectedPathPacket *pkt =
-        cratePacket(CONNPATH_SEND_DATA, bufferTotalSize, lastForward ? conn->destAddr : conn->sourceAddr,
-                    lastForward ? conn->destHandle : conn->sourceHandle, buffer);
-    ESP_LOGD(TAG, "ConnectedPath::processOutputBuffer processed size %d after %dms", bufferTotalSize,
-             MeshmeshComponent::elapsedMillis(now, lastPktTime));
+        cratePacket(lastHeader.subProtocol, bufferTotalSize, lastHeader.forward ? conn->destAddr : conn->sourceAddr,
+                    lastHeader.forward ? conn->destHandle : conn->sourceHandle, buffer);
+    ESP_LOGD(TAG, "ConnectedPath::processOutputBuffer prot %d processed size %d after %dms", lastHeader.subProtocol,
+             bufferTotalSize, MeshmeshComponent::elapsedMillis(now, lastHeader.pkttime));
     sendRadioPacket(pkt, false, true);
   }
 
