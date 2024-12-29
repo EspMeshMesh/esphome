@@ -15,7 +15,7 @@
 namespace esphome {
 namespace meshmesh {
 
-typedef std::function<void(void *arg, uint8_t *data, uint16_t size, uint8_t connid)> ConnectedPathReceiveHandler;
+typedef std::function<void(void *arg, const uint8_t *data, uint16_t size, uint8_t connid)> ConnectedPathReceiveHandler;
 typedef std::function<void(void *arg)> ConnectedPathDisconnectHandler;
 typedef std::function<void(void *arg, uint32_t from, uint16_t handle)> ConnectedPathNewConnectionHandler;
 
@@ -39,6 +39,7 @@ typedef ConnectedPathBindedPortSt ConnectedPathBindedPort_t;
 struct ConnectedPathConnections {
   uint8_t isInvalid : 1;
   uint8_t isOperative : 1;
+  uint16_t duplicatePacketCount;
   uint16_t sourceHandle;
   uint16_t destHandle;
   uint32_t sourceAddr;
@@ -90,7 +91,7 @@ class ConnectedPath {
   void loop();
   uint8_t sendRawRadioPacket(ConnectedPathPacket *pkt);
   uint8_t sendRadioPacket(ConnectedPathPacket *pkt, bool forward, bool initHeader);
-  void enqueueRadioPacket(uint8_t subprot, uint8_t connid, bool forward, uint16_t datasize, uint8_t *data);
+  void enqueueRadioPacket(uint8_t subprot, uint8_t connid, bool forward, uint16_t datasize, const uint8_t *data);
   void enqueueRadioDataTo(const uint8_t *data, uint16_t size, uint8_t connid, bool forward);
   void enqueueRadioDataTo(const uint8_t *data, uint16_t size, uint32_t from, uint16_t handle);
   void closeConnection_(uint8_t connid);
@@ -107,14 +108,13 @@ class ConnectedPath {
   static void radioPacketSentCb(void *arg, uint8_t status, RadioPacket *pkt);
   void radioPacketSent(uint8_t status, RadioPacket *pkt);
   void radioPacketError(uint32_t address, uint16_t handle, uint8_t subprot);
-  void openConnection(uint8_t *buffer, uint16_t size, uint32_t from);
-  void openConnectionForMe(uint8_t connid, uint16_t port);
+  void duplicatePacketStats(uint32_t address, uint16_t handle, uint16_t seqno);
+  void openConnection(uint32_t from, uint16_t handle, uint16_t datasize, uint8_t *data);
   void openConnectionNack(uint32_t from, uint16_t handle);
-  void openConnectionAck(uint32_t from, uint16_t handle, uint8_t *buffer, uint16_t size);
-  void disconnect(uint8_t *buffer, uint16_t size, uint32_t from);
-  void sendData(uint8_t *buffer, uint16_t size, uint32_t from);
-  uint8_t sendData2(uint8_t *buffer, uint16_t size, uint32_t source, uint16_t handle);
-  void invalidHandle(uint32_t from, uint16_t handle);
+  void openConnectionAck(uint32_t from, uint16_t handle);
+  void disconnect(uint32_t from, uint16_t handle);
+  void sendData(const uint8_t *buffer, uint16_t size, uint32_t source, uint16_t handle);
+  void sendDataNack(uint32_t from, uint16_t handle);
   void sendDataError(uint32_t from, uint16_t handle);
   void processOutputBuffer();
 
@@ -148,10 +148,11 @@ class ConnectedPath {
   uint8_t findConnectionIndex(uint32_t from, uint16_t handle, bool *forward);
   uint8_t findConnectionPeer(uint8_t connIdx, bool forward, uint32_t &peerAddress, uint16_t &peerHandle);
 
-  void sendUartPacket(uint8_t command, uint16_t handle, uint8_t *data, uint16_t size);
+  void sendUartPacket(uint8_t command, uint16_t handle, const uint8_t *data, uint16_t size);
   ConnectedPathPacket *cratePacket(uint8_t subprot, uint16_t size, uint32_t to, uint16_t handle,
                                    const uint8_t *payload);
-  void sendSimplePacket(uint8_t subprot, uint32_t to, uint16_t handle, bool forward);
+  bool sendPacket(uint8_t subprot, uint8_t connid, bool forward, uint16_t size, const uint8_t *data);
+  void sendImmediatePacket(uint8_t subprot, uint32_t to, uint16_t handle, uint16_t size, const uint8_t *data);
   void debugConnection() const;
 
  private:

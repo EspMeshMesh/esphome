@@ -26,7 +26,7 @@ class MeshmeshRawImpl : public Socket {
     mConnectedPath = meshmesh::MeshmeshComponent::getInstance()->getConnectedPath();
     if (!mServer) {
       mConnectedPath->setReceiveCallback(
-          [](void *arg, uint8_t *data, uint16_t size, uint8_t connid) {
+          [](void *arg, const uint8_t *data, uint16_t size, uint8_t connid) {
             auto a_this = (MeshmeshRawImpl *) arg;
             a_this->onRecv(data, size);
           },
@@ -217,7 +217,7 @@ class MeshmeshRawImpl : public Socket {
     mAcceptedSockets.push(std::move(sock));
   }
 
-  void onRecv(uint8_t *data, uint16_t size) {
+  void onRecv(const uint8_t *data, uint16_t size) {
     // ESP_LOGD(TAG, "MeshmeshRawImpl::onRecv(size=%d)", size);
     if (mRxQueue.size() + size > MAX_RX_QUEUE_SIZE) {
       ESP_LOGE(TAG, "MeshmeshRawImpl::onRecv(size=%d) queue of size %d is full", size, mRxQueue.size());

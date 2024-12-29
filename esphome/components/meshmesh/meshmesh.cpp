@@ -708,8 +708,11 @@ void MeshmeshComponent::commandReply(const uint8_t *buff, uint16_t len) {
   commandSource = SRC_SERIAL;
 }
 
-void MeshmeshComponent::handleFrame(uint8_t *buf, uint16_t len, DataSrc src, uint32_t from) {
+void MeshmeshComponent::handleFrame(const uint8_t *data, uint16_t len, DataSrc src, uint32_t from) {
   uint8_t err = HANDLE_UART_ERROR;
+
+  uint8_t *buf = new uint8_t[len];
+  os_memcpy(buf, data, len);
 
   // ESP_LOGD(TAG, "MeshmeshComponent::handleFrame src %d cmd %02X len %d", src, buf[0], len);
   // print_hex_array("handleFrame ", buf, len);
@@ -1245,6 +1248,7 @@ uint8_t MeshmeshComponent::flashHandleFrame(uint8_t *buf, uint16_t len) {
       }
   }
 
+  delete[] buf;
   return err;
 }
 
@@ -1403,11 +1407,11 @@ void MeshmeshComponent::onConnectedPathNewClient(uint32_t from, uint16_t handle)
 #endif
 }
 
-void MeshmeshComponent::onConnectedPathReceiveCb(void *arg, uint8_t *data, uint16_t size, uint8_t connid) {
+void MeshmeshComponent::onConnectedPathReceiveCb(void *arg, const uint8_t *data, uint16_t size, uint8_t connid) {
   ((MeshmeshComponent *) arg)->onConnectedPathReceive(data, size, connid);
 }
 
-void MeshmeshComponent::onConnectedPathReceive(uint8_t *data, uint16_t size, uint8_t connid) {
+void MeshmeshComponent::onConnectedPathReceive(const uint8_t *data, uint16_t size, uint8_t connid) {
 #ifdef USE_CONNECTED_PROTOCOL
   mConnectionId = connid;
   handleFrame(data, size, SRC_CONNPATH, connid);
