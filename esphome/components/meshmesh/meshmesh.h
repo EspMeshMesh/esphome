@@ -184,9 +184,8 @@ class MeshmeshComponent : public Component {
   void flushUartTxBuffer();
 
  private:
-  void handleFrame(uint8_t *buf, uint16_t len, DataSrc src, uint32_t from);
+  void handleFrame(const uint8_t *data, uint16_t len, DataSrc src, uint32_t from);
   void replyHandleFrame(uint8_t *buf, uint16_t len, DataSrc src, uint32_t from);
-  uint8_t customHandleFrame(uint8_t *buf, uint16_t len);
   uint8_t flashHandleFrame(uint8_t *buf, uint16_t len);
   void flashDealyedHandleFrame();
 
@@ -202,8 +201,8 @@ class MeshmeshComponent : public Component {
   void politeBroadcastReceiveCb(uint8_t *data, uint16_t size, uint32_t from);
   static void onConnectedPathNewClientCb(void *arg, uint32_t from, uint16_t handle);
   void onConnectedPathNewClient(uint32_t from, uint16_t handle);
-  static void onConnectedPathReceiveCb(void *arg, uint8_t *data, uint16_t size, uint8_t connid);
-  void onConnectedPathReceive(uint8_t *data, uint16_t size, uint8_t connid);
+  static void onConnectedPathReceiveCb(void *arg, const uint8_t *data, uint16_t size, uint8_t connid);
+  void onConnectedPathReceive(const uint8_t *data, uint16_t size, uint8_t connid);
   void sendLog(int level, const char *tag, const char *payload);
 
  private:
