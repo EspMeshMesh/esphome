@@ -426,7 +426,7 @@ void MeshmeshComponent::loop() {
   uint32_t now = millis();
 
 #if USE_ESP8266
-  if (!mWorkAround && elapsedMillis(now, mElapsed1) > 5000) {
+  if (!mWorkAround && elapsedMillis(now, mElapsed1) > 2000) {
     mWorkAround = true;
     uint8_t data[6] = {0x00, 0x01, 0x02, 0x03, 0x04, 0x05};
     uniCastSendData(data, 0x6, 0x111111);
@@ -714,11 +714,13 @@ void MeshmeshComponent::handleFrame(const uint8_t *data, uint16_t len, DataSrc s
   uint8_t *buf = new uint8_t[len];
   os_memcpy(buf, data, len);
 
-  // ESP_LOGD(TAG, "MeshmeshComponent::handleFrame src %d cmd %02X len %d", src, buf[0], len);
+  // ESP_LOGD(TAG, "MeshmeshComponent::handleFrame src %d cmd %02X:%02X len %d", src, buf[0], buf[1], len);
   // print_hex_array("handleFrame ", buf, len);
+
   commandSource = src;
   if (buf[0] & 0x01) {
     replyHandleFrame(buf, len, src, from);
+    delete[] buf;
     return;
   }
 
@@ -1112,6 +1114,7 @@ void MeshmeshComponent::handleFrame(const uint8_t *data, uint16_t len, DataSrc s
       break;
     case CMD_UNICAST_SEND:  // 72 0000XXYY AABBCCDDEE...ZZ
       if (len > 5) {
+        ESP_LOGD(TAG, "CMD_UNICAST_SEND len %d", len);
         unicast->send(buf + 5, len - 5, uint32FromBuffer(buf + 1), UNICAST_DEFAULT_PORT);
         err = 0;
       }
@@ -1177,6 +1180,8 @@ void MeshmeshComponent::handleFrame(const uint8_t *data, uint16_t len, DataSrc s
     ESP_LOGD(TAG, "MeshmeshComponent::handleFrame error frame %02X %02X size %d", buf[0], buf[1], len);
     delete[] rep;
   }
+
+  delete[] buf;
 }
 
 void MeshmeshComponent::replyHandleFrame(uint8_t *buf, uint16_t len, DataSrc src, uint32_t from) {
@@ -1248,7 +1253,6 @@ uint8_t MeshmeshComponent::flashHandleFrame(uint8_t *buf, uint16_t len) {
       }
   }
 
-  delete[] buf;
   return err;
 }
 
