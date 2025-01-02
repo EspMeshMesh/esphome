@@ -168,7 +168,7 @@ void ConnectedPath::enqueueRadioDataTo(const uint8_t *data, uint16_t size, uint3
   if (CONN_EXISTS(connid))
     enqueueRadioDataTo(data, size, connid, forward);
 
-  sendData(data, size, from, handle);
+  // sendData(data, size, from, handle);
 }
 
 void ConnectedPath::closeConnection_(uint8_t connid) {
@@ -529,6 +529,7 @@ void ConnectedPath::processOutputBuffer() {
     if (readed == sizeof(ConnectedPathOutputBufferHeader)) {
       if (checkHeader(header, lastHeader, now, isfirst)) {
         bufferTotalSize += header.dataSize;
+        ESP_LOGD(TAG, "ConnectedPath::processOutputBuffer %d", header.dataSize);
         setheader(lastHeader, header.connId, header.forward, header.subProtocol, header.pkttime, header.dataSize);
         offset += sizeof(ConnectedPathOutputBufferHeader) + header.dataSize;
         processing = true;
