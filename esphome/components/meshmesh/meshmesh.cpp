@@ -8,6 +8,7 @@
 #include "esphome/components/logger/logger.h"
 #endif
 #include "esphome/core/application.h"
+#include "esphome/core/version.h"
 #ifdef USE_LIGHT
 #include "esphome/components/light/light_state.h"
 #include "esphome/components/light/light_output.h"
@@ -32,6 +33,7 @@
 #include <Esp.h>
 #ifdef USE_ESP8266
 #include <eboot_command.h>
+#include <esphome/components/esp8266/preferences.h>
 #endif
 #endif
 
@@ -831,13 +833,15 @@ void MeshmeshComponent::handleFrame(const uint8_t *data, uint16_t len, DataSrc s
       break;
     case CMD_FIRMWARE_REQ:
       if (len == 1) {
-        uint8_t rep[32];
-        uint16_t lenstr = App.get_compilation_time().length();
-        if (lenstr > 31)
-          lenstr = 31;
+        size_t size = 1 + strlen(ESPHOME_VERSION) + 1 + App.get_compilation_time().length() + 1;
+        uint8_t *rep = new uint8_t[size];
         rep[0] = CMD_FIRMWARE_REP;
-        strncpy((char *) rep + 1, App.get_compilation_time().c_str(), 31);
-        commandReply((const uint8_t *) rep, lenstr + 1);
+        strcpy((char *) rep + 1, ESPHOME_VERSION);
+        rep[1 + strlen(ESPHOME_VERSION)] = ' ';
+        strcpy((char *) rep + 1 + strlen(ESPHOME_VERSION) + 1, App.get_compilation_time().c_str());
+        rep[size - 1] = 0;
+        commandReply((const uint8_t *) rep, size);
+        delete[] rep;
         err = 0;
       }
       break;
@@ -1214,6 +1218,7 @@ void MeshmeshComponent::replyHandleFrame(uint8_t *buf, uint16_t len, DataSrc src
 #define CMD_FLASH_ERASE 0x02
 #define CMD_FLASH_WRITE 0x03
 #define CMD_FLASH_EBOOT 0x04
+#define CMD_FLASH_PREPARE 0x05
 
 uint8_t MeshmeshComponent::flashHandleFrame(uint8_t *buf, uint16_t len) {
   uint8_t err = 1;
@@ -1230,6 +1235,18 @@ uint8_t MeshmeshComponent::flashHandleFrame(uint8_t *buf, uint16_t len) {
         mDelayedArgSize = len;
         mDelayedArg = new uint8_t[mDelayedArgSize];
         os_memcpy(mDelayedArg, buf, mDelayedArgSize);
+        err = 0;
+      }
+      break;
+    case CMD_FLASH_PREPARE:
+      if (len == 1) {
+#if defined(USE_ARDUINO) && defined(USE_ESP8266)
+        esp8266::preferences_prevent_write(true);
+#endif
+        uint8_t rep[2];
+        rep[0] = CMD_FLASH_OPER_REP;
+        rep[1] = CMD_FLASH_PREPARE;
+        commandReply(rep, 2);
         err = 0;
       }
       break;
@@ -1251,6 +1268,7 @@ uint8_t MeshmeshComponent::flashHandleFrame(uint8_t *buf, uint16_t len) {
         commandReply(rep, 2);
         err = 0;
       }
+      break;
   }
 
   return err;
