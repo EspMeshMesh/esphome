@@ -93,7 +93,7 @@ class ConnectedPath {
   uint8_t sendRadioPacket(ConnectedPathPacket *pkt, bool forward, bool initHeader);
   void enqueueRadioPacket(uint8_t subprot, uint8_t connid, bool forward, uint16_t datasize, const uint8_t *data);
   void enqueueRadioDataTo(const uint8_t *data, uint16_t size, uint8_t connid, bool forward);
-  void enqueueRadioDataTo(const uint8_t *data, uint16_t size, uint32_t from, uint16_t handle);
+  void enqueueRadioDataToSource(const uint8_t *data, uint16_t size, uint32_t from, uint16_t handle);
   void closeConnection_(uint8_t connid);
   void closeConnection(uint32_t from, uint16_t handle);
   void closeAllConnections();
@@ -115,7 +115,6 @@ class ConnectedPath {
   void disconnect(uint32_t from, uint16_t handle);
   void sendData(const uint8_t *buffer, uint16_t size, uint32_t source, uint16_t handle);
   void sendDataNack(uint32_t from, uint16_t handle);
-  void sendDataError(uint32_t from, uint16_t handle);
   void processOutputBuffer();
 
  private:
@@ -129,6 +128,8 @@ class ConnectedPath {
   void connectionSetInoperative(uint8_t index) {
     if (index < CONNPATH_MAX_CONNECTIONS && mConnectsions[index].isOperative) {
       mConnectsions[index].isOperative = false;
+      mConnectsions[index].receive = nullptr;
+      mConnectsions[index].disconnect = nullptr;
       mConnectionInoperativeCount++;
     }
   }
