@@ -182,14 +182,15 @@ class MeshmeshRawImpl : public Socket {
   }
 
   ssize_t write(const void *buf, size_t len) override {
-    mConnectedPath->enqueueRadioDataTo((const uint8_t *) buf, (uint16_t) len, mFrom, mHandle);
+    mConnectedPath->enqueueRadioDataToSource((const uint8_t *) buf, (uint16_t) len, mFrom, mHandle);
     return len;
   }
 
   ssize_t writev(const struct iovec *iov, int iovcnt) override {
     ssize_t written = 0;
     for (int i = 0; i < iovcnt; i++) {
-      mConnectedPath->enqueueRadioDataTo(reinterpret_cast<uint8_t *>(iov[i].iov_base), iov[i].iov_len, mFrom, mHandle);
+      mConnectedPath->enqueueRadioDataToSource(reinterpret_cast<uint8_t *>(iov[i].iov_base), iov[i].iov_len, mFrom,
+                                               mHandle);
       written += iov[i].iov_len;
     }
     return written;
