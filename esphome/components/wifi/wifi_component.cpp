@@ -267,6 +267,10 @@ void WiFiComponent::setup_ap_config_() {
       }
     }
     this->ap_.set_ssid(name);
+  } else {
+    char idhex[10];
+    std::sprintf(idhex, "%06X", system_get_chip_id());
+    this->ap_.set_ssid(this->ap_.get_ssid() + std::string(idhex));
   }
 
   ESP_LOGCONFIG(TAG, "Setting up AP...");
