@@ -977,6 +977,15 @@ void MeshmeshComponent::handleFrame(const uint8_t *data, uint16_t len, DataSrc s
           commandReply(rep, 3 + info.length());
           delete rep;
           err = 0;
+        } else {
+          uint8_t rep[5];
+          rep[0] = CMD_ENTITY_HASH_REP;
+          rep[1] = 0;
+          rep[2] = 0;
+          rep[3] = 'E';
+          rep[4] = '!';
+          commandReply(rep, 5);
+          err = 0;
         }
       }
       break;
