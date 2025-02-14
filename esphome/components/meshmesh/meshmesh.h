@@ -115,6 +115,7 @@ class MeshmeshComponent : public Component {
 #endif
  public:
   MeshmeshComponent(int baud_rate, int tx_buffer, int rx_buffer);
+  void defaultPreferences();
   void preSetupPreferences();
   void pre_setup();
   bool isDisabled() const {
@@ -272,6 +273,12 @@ class MeshmeshComponent : public Component {
 #if defined(USE_ESP8266)
   bool mWorkAround{false};
 #endif
+
+#ifdef USE_BINARY_SENSOR
+  binary_sensor::BinarySensor *mFactoryReset = nullptr;
+  uint32_t mFactoryResetRequested = 0;
+#endif
+
 #ifdef USE_TEST_PROCEDURE
  private:
   void test_light_broadcast(uint16_t value);

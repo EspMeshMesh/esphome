@@ -9,6 +9,10 @@
 #endif
 #include "esphome/core/application.h"
 #include "esphome/core/version.h"
+
+#ifdef USE_BINARY_SENSOR
+#include "esphome/components/binary_sensor/binary_sensor.h"
+#endif
 #ifdef USE_LIGHT
 #include "esphome/components/light/light_state.h"
 #include "esphome/components/light/light_output.h"
@@ -64,7 +68,7 @@ MeshmeshComponent::MeshmeshComponent(int baud_rate, int tx_buffer, int rx_buffer
     singleton = this;
 }
 
-void MeshmeshComponent::preSetupPreferences() {
+void MeshmeshComponent::defaultPreferences() {
   // Default preferences
   os_memset(mPreferences.devicetag, 0, 32);
   mPreferences.channel = UINT8_MAX;
@@ -76,7 +80,10 @@ void MeshmeshComponent::preSetupPreferences() {
 #else
   mPreferences.bindedServer = UINT32_MAX;  // Bind server is not enabled
 #endif
+}
 
+void MeshmeshComponent::preSetupPreferences() {
+  defaultPreferences();
   mPreferencesObject = global_preferences->make_preference<MeshmeshSettings>(fnv1_hash("MeshmeshComponent"), true);
   if (!mPreferencesObject.load(&mPreferences)) {
     ESP_LOGE(TAG, "Can't read prederences from flash");
@@ -126,6 +133,7 @@ void setupIdfWifi() {
   wcfg.ap.ssid_len = 0;
   wcfg.ap.channel = mPreferences.channel > MAX_CHANNEL ? (mConfigChannel > MAX_CHANNEL ? DEF_CHANNEL : mConfigChannel)
                                                        : mPreferences.channel;
+
   wcfg.ap.authmode = WIFI_AUTH_OPEN;
   wcfg.ap.ssid_hidden = 1;
   wcfg.ap.max_connection = 4;
@@ -328,6 +336,33 @@ void MeshmeshComponent::setup() {
   dump_config();
   mElapsed1 = millis();
 
+#ifdef USE_BINARY_SENSOR
+  for (auto binary : App.get_binary_sensors()) {
+    ESP_LOGCONFIG(TAG, "Found binary sensor %s with hash %08X", binary->get_object_id().c_str(),
+                  binary->get_object_id_hash());
+
+    mFactoryReset = binary;
+    mFactoryReset->add_on_state_callback([this](bool state) {
+      uint32_t now = millis();
+      if (!state) {
+        if (mFactoryResetRequested == 0) {
+          // Button pressed  and reset procedure is not active
+          ESP_LOGI(TAG, "Factory reset requested");
+          status_set_warning();
+          mFactoryResetRequested = now;
+        }
+      } else {
+        if (mFactoryResetRequested > 0 && elapsedMillis(now, mFactoryResetRequested) < 5000) {
+          // Button released and reset procedure is active for less than 5 seconds
+          status_clear_warning();
+          mFactoryResetRequested = 0;
+          ESP_LOGI(TAG, "Factory reset cancelled");
+        }
+      }
+    });
+  }
+#endif
+
 #ifdef USE_TEST_PROCEDURE
   mTestProcedureTime = millis();
 #endif
@@ -356,6 +391,20 @@ void MeshmeshComponent::dump_config() {
 }
 
 void MeshmeshComponent::loop() {
+  uint32_t now = millis();
+
+  if (mFactoryResetRequested > 0) {
+    if (elapsedMillis(now, mFactoryResetRequested) > 20000) {
+      ESP_LOGI(TAG, "Factory reset in progress");
+      App.reboot();
+    } else if (elapsedMillis(now, mFactoryResetRequested) > 5000 && !isDisabled()) {
+      status_set_error();
+      ESP_LOGI(TAG, "Factory reset in accpeted");
+      defaultPreferences();
+      mPreferencesObject.save(&mPreferences);
+    }
+  }
+
   if (isDisabled())
     return;
 
@@ -424,8 +473,6 @@ void MeshmeshComponent::loop() {
       }
     }
   }
-
-  uint32_t now = millis();
 
 #if USE_ESP8266
   if (!mWorkAround && elapsedMillis(now, mElapsed1) > 2000) {
@@ -519,6 +566,7 @@ sensor::Sensor *MeshmeshComponent::findSensor(uint16_t hash) {
 #endif
 
 #ifdef USE_BINARY_SENSOR
+
 binary_sensor::BinarySensor *MeshmeshComponent::findBinarySensor(uint16_t hash) {
   binary_sensor::BinarySensor *result = nullptr;
   auto sensors = App.get_binary_sensors();
