@@ -392,7 +392,7 @@ void MeshmeshComponent::dump_config() {
 
 void MeshmeshComponent::loop() {
   uint32_t now = millis();
-
+#ifdef USE_BINARY_SENSOR
   if (mFactoryResetRequested > 0) {
     if (elapsedMillis(now, mFactoryResetRequested) > 20000) {
       ESP_LOGI(TAG, "Factory reset in progress");
@@ -404,7 +404,7 @@ void MeshmeshComponent::loop() {
       mPreferencesObject.save(&mPreferences);
     }
   }
-
+#endif
   if (isDisabled())
     return;
 
@@ -811,17 +811,19 @@ void MeshmeshComponent::handleFrame(const uint8_t *data, uint16_t len, DataSrc s
         err = 0;
       }
       break;
+#ifdef USE_BINARY_SENSOR
     case CMD_BIND_CLEAR_REQ:
       if (len == 1) {
         if (mPreferences.bindedServer != UINT32_MAX) {
-          mPreferences.bindedServer = 0;
-          mPreferencesObject.save(&mPreferences);
+          status_set_warning();
+          mFactoryResetRequested = millis() - 4000;
           buf[0] = CMD_BIND_CLEAR_REP;
           commandReply(buf, 1);
           err = 0;
         }
       }
       break;
+#endif
     case CMD_CHANNEL_SET_REQ:
       if (len == 2) {
         uint8_t channel = buf[1];
